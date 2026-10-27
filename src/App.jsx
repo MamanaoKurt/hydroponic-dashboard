@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download, Smartphone, Monitor } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableCell, TableRow, WidthType, HeadingLevel } from 'docx';
 
 const App = () => {
@@ -14,8 +14,9 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- PWA INSTALL PROMPT STATE ---
+  // --- PWA INSTALL PROMPT & MODAL STATE ---
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   // --- ESP32 WIFI MODAL STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
@@ -70,7 +71,6 @@ const App = () => {
     localStorage.setItem('techPechay_currUser', currentUser);
     localStorage.setItem('techPechay_activeSsid', activeSsid);
 
-    // Listen for PWA installation prompt
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setInstallPrompt(e);
@@ -82,12 +82,17 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
+  // Always accessible install trigger
   const handleInstallClick = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setInstallPrompt(null);
+      }
+    } else {
+      // Open manual guide modal for browsers that don't trigger automatic events
+      setInstallModalOpen(true);
     }
   };
 
@@ -340,11 +345,10 @@ const App = () => {
           <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          {installPrompt && (
-            <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition">
-              <Download className="w-4 h-4" /> Install App
-            </button>
-          )}
+          {/* Always Visible Install Button */}
+          <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition shadow-md">
+            <Download className="w-4 h-4" /> Install App
+          </button>
           <button onClick={() => setWifiModalOpen(true)} className="px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] text-[#34D399]">
             <Wifi className="w-4 h-4" /> {activeSsid}
           </button>
@@ -354,6 +358,41 @@ const App = () => {
           <button onClick={handleLogout} className="bg-[#0B0F19] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold">Logout</button>
         </div>
       </header>
+
+      {/* Install Guide Modal for Browsers without Auto-Prompt */}
+      {installModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md relative shadow-2xl">
+            <button onClick={() => setInstallModalOpen(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white"><X className="w-5 h-5"/></button>
+            <div className="flex items-center gap-2 mb-3">
+              <Download className="w-6 h-6 text-[#34D399]" />
+              <h3 className="text-lg font-bold text-white">How to Install Tech Pechay Hub</h3>
+            </div>
+            <p className="text-xs text-gray-300 mb-4">Depending on your browser or device, follow these quick steps to install this app:</p>
+            
+            <div className="space-y-3 text-xs text-gray-200 mb-6 bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937]">
+              <div>
+                <p className="font-bold text-[#34D399] flex items-center gap-1.5 mb-1"><Monitor className="w-4 h-4"/> Desktop (Chrome, Edge, Brave):</p>
+                <p className="text-gray-400">Click the install icon (<span className="text-white font-semibold">⊕</span> or computer icon) on the right side of your browser address bar.</p>
+              </div>
+              <hr className="border-[#1F2937]" />
+              <div>
+                <p className="font-bold text-[#22D3EE] flex items-center gap-1.5 mb-1"><Smartphone className="w-4 h-4"/> Mobile (Android Chrome):</p>
+                <p className="text-gray-400">Tap the three dots menu (⋮) at the top right and select <span className="text-white font-semibold">"Install app"</span> or <span className="text-white font-semibold">"Add to Home screen"</span>.</p>
+              </div>
+              <hr className="border-[#1F2937]" />
+              <div>
+                <p className="font-bold text-orange-400 flex items-center gap-1.5 mb-1"><Smartphone className="w-4 h-4"/> iOS (iPhone / Safari):</p>
+                <p className="text-gray-400">Tap the Share button at the bottom toolbar, scroll down, and tap <span className="text-white font-semibold">"Add to Home Screen"</span>.</p>
+              </div>
+            </div>
+
+            <button onClick={() => setInstallModalOpen(false)} className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Wi-Fi Modal */}
       {wifiModalOpen && (
