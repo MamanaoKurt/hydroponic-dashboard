@@ -1,49 +1,80 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, Printer, Calendar } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, Printer, Calendar, UserPlus, LogIn } from 'lucide-react';
 
 const App = () => {
-  // --- AUTHENTICATION STATE ---
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // --- PERSISTENT AUTHENTICATION & USERS STATE ---
+  const [users, setUsers] = useState(() => {
+    const saved = localStorage.getItem('techPechay_users');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('techPechay_logged') === 'true';
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    return localStorage.getItem('techPechay_currUser') || '';
+  });
+  
+  const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- SENSORS & TELEMETRY ---
+  // --- PERSISTENT SENSORS & HISTORY STATE ---
   const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
-  const [history, setHistory] = useState([
-    { id: 1, time: '10:00 AM', temp: 24.5, moisture: 45, waterLevel: 85, status: 'Optimal' },
-    { id: 2, time: '10:03 AM', temp: 26.0, moisture: 42, waterLevel: 84, status: 'Optimal' },
-    { id: 3, time: '10:06 AM', temp: 28.2, moisture: 38, waterLevel: 82, status: 'Warning' }
-  ]);
+  const [history, setHistory] = useState(() => {
+    const saved = localStorage.getItem('techPechay_history');
+    return saved ? JSON.parse(saved) : [
+      { id: 1, time: '10:00 AM', temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85, status: 'Optimal' },
+      { id: 2, time: '10:03 AM', temp: 26.0, humidity: 58, moisture: 42, waterLevel: 84, status: 'Optimal' },
+      { id: 3, time: '10:06 AM', temp: 28.2, humidity: 55, moisture: 38, waterLevel: 82, status: 'Warning' }
+    ];
+  });
   
-  // --- THRESHOLDS ---
-  const [thresholds, setThresholds] = useState({
-    hotTemp: 30, 
-    coldTemp: 20, 
-    dryMoisture: 30 
+  // --- PERSISTENT THRESHOLDS STATE ---
+  const [thresholds, setThresholds] = useState(() => {
+    const saved = localStorage.getItem('techPechay_thresholds');
+    return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
   const [actuators, setActuators] = useState({ fan: false, light: false, pump: false });
 
   // --- MODULE STATES ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [plantingDate, setPlantingDate] = useState('2026-03-01');
+  const [plantingDate, setPlantingDate] = useState(() => {
+    return localStorage.getItem('techPechay_plantingDate') || '2026-03-01';
+  });
+
+  // Manual Log Form State (All telemetry fields)
   const [newLogTime, setNewLogTime] = useState('');
   const [newLogTemp, setNewLogTemp] = useState('');
+  const [newLogHumidity, setNewLogHumidity] = useState('');
+  const [newLogMoisture, setNewLogMoisture] = useState('');
+  const [newLogWater, setNewLogWater] = useState('');
 
-  // Simulation effect
+  // Save state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('techPechay_users', JSON.stringify(users));
+    localStorage.setItem('techPechay_history', JSON.stringify(history));
+    localStorage.setItem('techPechay_thresholds', JSON.stringify(thresholds));
+    localStorage.setItem('techPechay_plantingDate', plantingDate);
+    localStorage.setItem('techPechay_logged', isLoggedIn);
+    localStorage.setItem('techPechay_currUser', currentUser);
+  }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser]);
+
+  // Live Simulation effect
   useEffect(() => {
     if (!isLoggedIn) return;
     const interval = setInterval(() => {
       const newTemp = parseFloat((22 + Math.random() * 10).toFixed(1));
       const newMoisture = parseFloat((30 + Math.random() * 40).toFixed(1));
       const newWater = parseFloat((75 + Math.random() * 15).toFixed(1));
-      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const newHumid = parseFloat((55 + Math.random() * 20).toFixed(1));
       
       setSensors({
         temp: newTemp,
-        humidity: parseFloat((55 + Math.random() * 20).toFixed(1)),
+        humidity: newHumid,
         moisture: newMoisture,
         waterLevel: newWater
       });
@@ -58,31 +89,74 @@ const App = () => {
     return () => clearInterval(interval);
   }, [isLoggedIn, thresholds]);
 
+  // --- AUTHENTICATION HANDLERS ---
+  const handleRegister = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    if (!username || !password) {
+      setAuthError('Please fill in all fields.');
+      return;
+    }
+
+    const existingUser = users.find(u => u.username === username);
+    if (existingUser) {
+      setAuthError('Username already exists. Please choose another.');
+      return;
+    }
+
+    const updatedUsers = [...users, { username, password }];
+    setUsers(updatedUsers);
+    setAuthSuccess('Account created successfully! You can now log in.');
+    setIsRegistering(false);
+    setUsername('');
+    setPassword('');
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
-    if (username === 'admin' && password === 'pechay123') {
+    setAuthError('');
+    setAuthSuccess('');
+
+    const foundUser = users.find(u => u.username === username && u.password === password);
+    if (foundUser) {
       setIsLoggedIn(true);
-      setAuthError('');
+      setCurrentUser(username);
+      setUsername('');
+      setPassword('');
     } else {
-      setAuthError('Invalid username or password (try admin / pechay123)');
+      setAuthError('Invalid username or password.');
     }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser('');
+    localStorage.setItem('techPechay_logged', 'false');
+    localStorage.removeItem('techPechay_currUser');
   };
 
   // --- DATA MANIPULATION MODULE (CRUD) ---
   const handleAddLog = (e) => {
     e.preventDefault();
-    if (!newLogTime || !newLogTemp) return;
+    if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture || !newLogWater) return;
+    
     const newItem = {
       id: Date.now(),
       time: newLogTime,
       temp: parseFloat(newLogTemp),
-      moisture: 50,
-      waterLevel: 80,
+      humidity: parseFloat(newLogHumidity),
+      moisture: parseFloat(newLogMoisture),
+      waterLevel: parseFloat(newLogWater),
       status: 'Manual Entry'
     };
     setHistory([newItem, ...history]);
     setNewLogTime('');
     setNewLogTemp('');
+    setNewLogHumidity('');
+    setNewLogMoisture('');
+    setNewLogWater('');
   };
 
   const handleDeleteLog = (id) => {
@@ -95,7 +169,7 @@ const App = () => {
     const today = new Date();
     const diffTime = Math.abs(today - planted);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const maturityDays = 32; // Tech Pechay standard cycle
+    const maturityDays = 32; // Tech Pechay cycle
     const progress = Math.min(Math.floor((diffDays / maturityDays) * 100), 100);
     
     const estimatedHarvestDate = new Date(planted);
@@ -117,45 +191,79 @@ const App = () => {
     String(item.temp).includes(searchQuery)
   );
 
+  // --- LOGIN & REGISTRATION VIEW ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
         <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-bold text-green-400">🌱 Tech Pechay Hub</h1>
-            <p className="text-gray-400 text-sm mt-1">Greenhouse Authentication Portal</p>
+            <p className="text-gray-400 text-sm mt-1">
+              {isRegistering ? 'Create Greenhouse Account' : 'Greenhouse Authentication Portal'}
+            </p>
           </div>
+
           {authError && <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg text-sm mb-4">{authError}</div>}
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="text-gray-300 text-sm block mb-1">Username</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
-            </div>
-            <div>
-              <label className="text-gray-300 text-sm block mb-1">Password</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="pechay123" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
-            </div>
-            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200">Secure Login</button>
-          </form>
-          <p className="text-xs text-gray-500 text-center mt-4">Hint: Use user <code className="text-green-400">admin</code> and password <code className="text-green-400">pechay123</code></p>
+          {authSuccess && <div className="bg-green-500/10 border border-green-500 text-green-400 p-3 rounded-lg text-sm mb-4">{authSuccess}</div>}
+
+          {!isRegistering ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="text-gray-300 text-sm block mb-1">Username</label>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter username" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm block mb-1">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+              </div>
+              <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center gap-2">
+                <LogIn className="w-4 h-4" /> Secure Login
+              </button>
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} className="text-sm text-green-400 hover:underline">
+                  Don't have an account? Sign up here
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div>
+                <label className="text-gray-300 text-sm block mb-1">Choose Username</label>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Choose username" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm block mb-1">Choose Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Choose password" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+              </div>
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center gap-2">
+                <UserPlus className="w-4 h-4" /> Register Account
+              </button>
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} className="text-sm text-gray-400 hover:underline">
+                  Already have an account? Log in
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     );
   }
 
+  // --- MAIN DASHBOARD VIEW ---
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans">
       {/* Header & Print Module */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-gray-800 pb-4">
         <div>
           <h1 className="text-3xl font-bold text-green-400 flex items-center gap-2">🌱 Tech Pechay Hydroponic System</h1>
-          <p className="text-gray-400">Smart Greenhouse Monitoring & Management Console</p>
+          <p className="text-gray-400">Smart Greenhouse Monitoring & Management Console • Logged in as <strong className="text-green-300">{currentUser}</strong></p>
         </div>
         <div className="flex gap-3">
           <button onClick={() => window.print()} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition">
             <Printer className="w-4 h-4 text-green-400" /> Print Report
           </button>
-          <button onClick={() => setIsLoggedIn(false)} className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition">
+          <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition">
             Logout
           </button>
         </div>
@@ -188,7 +296,7 @@ const App = () => {
         </div>
       </div>
 
-      {/* Sensor Cards (Including Water Level) */}
+      {/* Sensor Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
           <div>
@@ -281,20 +389,36 @@ const App = () => {
         </div>
       </div>
 
-      {/* Search & Data Manipulation Modules */}
+      {/* Search & Full Telemetry Data Manipulation Modules */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-green-400" /> Add Manual Log</h3>
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-green-400" /> Add Full Manual Log</h3>
           <form onSubmit={handleAddLog} className="space-y-3">
             <div>
               <label className="text-xs text-gray-400 block mb-1">Time Label</label>
               <input type="text" value={newLogTime} onChange={(e) => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
             </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Recorded Temp (°C)</label>
-              <input type="number" step="0.1" value={newLogTemp} onChange={(e) => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Temp (°C)</label>
+                <input type="number" step="0.1" value={newLogTemp} onChange={(e) => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Humidity (%)</label>
+                <input type="number" step="0.1" value={newLogHumidity} onChange={(e) => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+              </div>
             </div>
-            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-semibold py-2 rounded-lg text-sm transition">Insert Record</button>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Moisture (%)</label>
+                <input type="number" step="0.1" value={newLogMoisture} onChange={(e) => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Water (%)</label>
+                <input type="number" step="0.1" value={newLogWater} onChange={(e) => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+              </div>
+            </div>
+            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-semibold py-2 rounded-lg text-sm transition mt-2">Insert Full Record</button>
           </form>
         </div>
 
@@ -307,12 +431,13 @@ const App = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-48 overflow-y-auto">
+          <div className="overflow-x-auto max-h-56 overflow-y-auto">
             <table className="w-full text-left text-sm text-gray-300">
               <thead className="bg-gray-900 text-gray-400 uppercase text-xs sticky top-0">
                 <tr>
                   <th className="p-3">Time</th>
                   <th className="p-3">Temp</th>
+                  <th className="p-3">Humidity</th>
                   <th className="p-3">Moisture</th>
                   <th className="p-3">Water</th>
                   <th className="p-3">Status</th>
@@ -325,6 +450,7 @@ const App = () => {
                     <tr key={item.id} className="hover:bg-gray-750">
                       <td className="p-3 font-medium text-white">{item.time}</td>
                       <td className="p-3">{item.temp}°C</td>
+                      <td className="p-3">{item.humidity}%</td>
                       <td className="p-3">{item.moisture}%</td>
                       <td className="p-3">{item.waterLevel}%</td>
                       <td className="p-3"><span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400 border border-green-500/20">{item.status}</span></td>
@@ -335,7 +461,7 @@ const App = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="p-4 text-center text-gray-500">No matching records found.</td>
+                    <td colSpan="7" className="p-4 text-center text-gray-500">No matching records found.</td>
                   </tr>
                 )}
               </tbody>
