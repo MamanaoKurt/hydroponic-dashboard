@@ -1,411 +1,350 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
-} from 'recharts';
-import { 
-  Thermometer, Droplets, CloudRain, Fan, Lightbulb, 
-  Power, Settings, Wifi, Activity, CheckCircle2, RotateCcw
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, Printer, Calendar } from 'lucide-react';
 
-// Helper to generate 24 hours of mock historical data
-const generateInitialHistory = () => {
-  const data = [];
-  const now = new Date();
-  for (let i = 24; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-    data.push({
-      time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      temp: +(22 + Math.random() * 8).toFixed(1),      // 22-30 C
-      humidity: +(50 + Math.random() * 20).toFixed(1), // 50-70 %
-      moisture: +(30 + Math.random() * 30).toFixed(1), // 30-60 %
-    });
-  }
-  return data;
-};
+const App = () => {
+  // --- AUTHENTICATION STATE ---
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
 
-export default function HydroponicsDashboard() {
-  // --- STATE ---
-  // 1. Current Sensor Readings
-  const [readings, setReadings] = useState({
-    temp: 26.5,
-    humidity: 62.0,
-    moisture: 45.0,
-  });
-
-  // 2. Historical Data for Chart
-  const [history, setHistory] = useState(generateInitialHistory());
-
-  // 3. System Thresholds (Settings)
-  const [thresholds, setThresholds] = useState({
-    fanTempTarget: 28,     // Turn on Fan if Temp > 28
-    lightTempTarget: 20,   // Turn on Lights if Temp < 20
-    pumpMoistureTarget: 40 // Turn on Pump if Moisture < 40
-  });
-
-  // 4. Actuator States
-  const [actuators, setActuators] = useState({
-    fan: { mode: 'auto', isOn: false },
-    lights: { mode: 'auto', isOn: false },
-    pump: { mode: 'auto', isOn: false }
-  });
-
-  const [isConnected, setIsConnected] = useState(true);
-
-  // --- SIMULATION & AUTO-LOGIC ---
+  // --- SENSORS & TELEMETRY ---
+  const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
+  const [history, setHistory] = useState([
+    { id: 1, time: '10:00 AM', temp: 24.5, moisture: 45, waterLevel: 85, status: 'Optimal' },
+    { id: 2, time: '10:03 AM', temp: 26.0, moisture: 42, waterLevel: 84, status: 'Optimal' },
+    { id: 3, time: '10:06 AM', temp: 28.2, moisture: 38, waterLevel: 82, status: 'Warning' }
+  ]);
   
-  // Simulate incoming ESP32 telemetry every 5 seconds
+  // --- THRESHOLDS ---
+  const [thresholds, setThresholds] = useState({
+    hotTemp: 30, 
+    coldTemp: 20, 
+    dryMoisture: 30 
+  });
+
+  const [actuators, setActuators] = useState({ fan: false, light: false, pump: false });
+
+  // --- MODULE STATES ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [plantingDate, setPlantingDate] = useState('2026-03-01');
+  const [newLogTime, setNewLogTime] = useState('');
+  const [newLogTemp, setNewLogTemp] = useState('');
+
+  // Simulation effect
   useEffect(() => {
+    if (!isLoggedIn) return;
     const interval = setInterval(() => {
-      setReadings(prev => {
-        // Random walk for natural-looking variations
-        const newTemp = prev.temp + (Math.random() - 0.5) * 0.5;
-        const newHum = prev.humidity + (Math.random() - 0.5) * 1.5;
-        const newMoist = prev.moisture + (Math.random() - 0.5) * 1.0 + (actuators.pump.isOn ? 2.0 : -0.2); // Pump increases moisture
-        
-        const newReadings = {
-          temp: Math.max(10, Math.min(40, newTemp)),
-          humidity: Math.max(20, Math.min(90, newHum)),
-          moisture: Math.max(10, Math.min(90, newMoist)),
-        };
-
-        // Update history periodically
-        setHistory(currHistory => {
-          const now = new Date();
-          const newPoint = {
-            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second:'2-digit' }),
-            temp: +(newReadings.temp).toFixed(1),
-            humidity: +(newReadings.humidity).toFixed(1),
-            moisture: +(newReadings.moisture).toFixed(1),
-          };
-          return [...currHistory.slice(1), newPoint]; // Keep last 24 points
-        });
-
-        return newReadings;
+      const newTemp = parseFloat((22 + Math.random() * 10).toFixed(1));
+      const newMoisture = parseFloat((30 + Math.random() * 40).toFixed(1));
+      const newWater = parseFloat((75 + Math.random() * 15).toFixed(1));
+      const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      
+      setSensors({
+        temp: newTemp,
+        humidity: parseFloat((55 + Math.random() * 20).toFixed(1)),
+        moisture: newMoisture,
+        waterLevel: newWater
       });
-    }, 3000);
+
+      setActuators({
+        fan: newTemp > thresholds.hotTemp,
+        light: newTemp < thresholds.coldTemp,
+        pump: newMoisture < thresholds.dryMoisture
+      });
+    }, 4000);
 
     return () => clearInterval(interval);
-  }, [actuators.pump.isOn]); // Re-run if pump state changes so moisture logic updates
+  }, [isLoggedIn, thresholds]);
 
-  // Evaluate Auto-Logic based on thresholds and current readings
-  useEffect(() => {
-    setActuators(prev => {
-      const next = { ...prev };
-      
-      // Fan Logic
-      if (next.fan.mode === 'auto') {
-        next.fan.isOn = readings.temp > thresholds.fanTempTarget;
-      }
-      // Light Logic
-      if (next.lights.mode === 'auto') {
-        next.lights.isOn = readings.temp < thresholds.lightTempTarget;
-      }
-      // Pump Logic
-      if (next.pump.mode === 'auto') {
-        next.pump.isOn = readings.moisture < thresholds.pumpMoistureTarget;
-      }
-
-      // Check if anything actually changed to prevent infinite re-renders
-      if (
-        next.fan.isOn !== prev.fan.isOn || 
-        next.lights.isOn !== prev.lights.isOn || 
-        next.pump.isOn !== prev.pump.isOn
-      ) {
-        return next;
-      }
-      return prev;
-    });
-  }, [readings, thresholds]);
-
-  // --- HANDLERS ---
-  const handleThresholdChange = (key, value) => {
-    setThresholds(prev => ({ ...prev, [key]: Number(value) }));
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (username === 'admin' && password === 'pechay123') {
+      setIsLoggedIn(true);
+      setAuthError('');
+    } else {
+      setAuthError('Invalid username or password (try admin / pechay123)');
+    }
   };
 
-  const toggleActuatorMode = (device) => {
-    setActuators(prev => ({
-      ...prev,
-      [device]: { ...prev[device], mode: prev[device].mode === 'auto' ? 'manual' : 'auto' }
-    }));
+  // --- DATA MANIPULATION MODULE (CRUD) ---
+  const handleAddLog = (e) => {
+    e.preventDefault();
+    if (!newLogTime || !newLogTemp) return;
+    const newItem = {
+      id: Date.now(),
+      time: newLogTime,
+      temp: parseFloat(newLogTemp),
+      moisture: 50,
+      waterLevel: 80,
+      status: 'Manual Entry'
+    };
+    setHistory([newItem, ...history]);
+    setNewLogTime('');
+    setNewLogTemp('');
   };
 
-  const toggleActuatorState = (device) => {
-    setActuators(prev => {
-      if (prev[device].mode === 'auto') return prev; // Cannot manually toggle in auto mode
-      return {
-        ...prev,
-        [device]: { ...prev[device], isOn: !prev[device].isOn }
-      };
-    });
+  const handleDeleteLog = (id) => {
+    setHistory(history.filter(item => item.id !== id));
   };
 
-  // --- UI COMPONENTS ---
-  
-  const StatCard = ({ title, value, unit, icon: Icon, color, trend }) => (
-    <div className="bg-slate-800/80 backdrop-blur-md border border-slate-700/50 rounded-2xl p-5 flex items-center justify-between shadow-xl">
-      <div>
-        <p className="text-slate-400 text-sm font-medium mb-1">{title}</p>
-        <div className="flex items-baseline gap-1">
-          <h3 className="text-3xl font-bold text-slate-100">{value.toFixed(1)}</h3>
-          <span className="text-slate-500 font-semibold">{unit}</span>
-        </div>
-      </div>
-      <div className={`p-4 rounded-full ${color} bg-opacity-10 border border-current border-opacity-20`}>
-        <Icon className={`w-8 h-8 ${color}`} strokeWidth={1.5} />
-      </div>
-    </div>
+  // --- HARVEST TIME APPROXIMATION ---
+  const calculateHarvestProgress = () => {
+    const planted = new Date(plantingDate);
+    const today = new Date();
+    const diffTime = Math.abs(today - planted);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const maturityDays = 32; // Tech Pechay standard cycle
+    const progress = Math.min(Math.floor((diffDays / maturityDays) * 100), 100);
+    
+    const estimatedHarvestDate = new Date(planted);
+    estimatedHarvestDate.setDate(estimatedHarvestDate.getDate() + maturityDays);
+
+    return {
+      daysElapsed: diffDays,
+      progress: progress,
+      targetDate: estimatedHarvestDate.toDateString()
+    };
+  };
+
+  const harvestInfo = calculateHarvestProgress();
+
+  // Search Module Filter
+  const filteredHistory = history.filter(item => 
+    item.time.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(item.temp).includes(searchQuery)
   );
 
-  const ActuatorCard = ({ title, deviceKey, icon: Icon, colorClass, activeColorClass }) => {
-    const data = actuators[deviceKey];
-    const isAuto = data.mode === 'auto';
-    const isActive = data.isOn;
-
+  if (!isLoggedIn) {
     return (
-      <div className={`relative overflow-hidden rounded-2xl border transition-all duration-300 ${isActive ? 'bg-slate-800/90 border-slate-600' : 'bg-slate-800/40 border-slate-700/50'} p-5 shadow-lg`}>
-        {isActive && (
-          <div className={`absolute -top-10 -right-10 w-32 h-32 blur-3xl opacity-20 rounded-full ${activeColorClass.split(' ')[0]} bg-current pointer-events-none`} />
-        )}
-        
-        <div className="flex justify-between items-start mb-6 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className={`p-3 rounded-xl ${isActive ? activeColorClass + ' bg-opacity-10' : 'text-slate-500 bg-slate-700/30'}`}>
-              <Icon className={`w-6 h-6 ${isActive && deviceKey === 'fan' ? 'animate-spin-slow' : ''}`} />
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-green-400">🌱 Tech Pechay Hub</h1>
+            <p className="text-gray-400 text-sm mt-1">Greenhouse Authentication Portal</p>
+          </div>
+          {authError && <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg text-sm mb-4">{authError}</div>}
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="text-gray-300 text-sm block mb-1">Username</label>
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="admin" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
             </div>
             <div>
-              <h4 className="font-semibold text-slate-200">{title}</h4>
-              <p className={`text-xs font-medium uppercase tracking-wider ${isActive ? activeColorClass : 'text-slate-500'}`}>
-                {isActive ? 'Running' : 'Standby'}
-              </p>
+              <label className="text-gray-300 text-sm block mb-1">Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="pechay123" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
             </div>
-          </div>
-        </div>
-
-        <div className="flex gap-2 relative z-10">
-          <button 
-            onClick={() => toggleActuatorMode(deviceKey)}
-            className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-colors ${isAuto ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600 hover:bg-slate-700'}`}
-          >
-            Auto
-          </button>
-          <button 
-            onClick={() => toggleActuatorState(deviceKey)}
-            disabled={isAuto}
-            className={`flex-1 py-2 flex items-center justify-center gap-2 text-sm font-medium rounded-lg border transition-colors ${
-              isAuto 
-                ? 'opacity-50 cursor-not-allowed bg-slate-800 border-slate-700 text-slate-500' 
-                : isActive
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
-                  : 'bg-slate-700/50 text-slate-300 border-slate-600 hover:bg-slate-700'
-            }`}
-          >
-            <Power className="w-4 h-4" />
-            {isActive ? 'Turn Off' : 'Turn On'}
-          </button>
+            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200">Secure Login</button>
+          </form>
+          <p className="text-xs text-gray-500 text-center mt-4">Hint: Use user <code className="text-green-400">admin</code> and password <code className="text-green-400">pechay123</code></p>
         </div>
       </div>
     );
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200 p-4 md:p-6 lg:p-8 font-sans selection:bg-indigo-500/30">
-      
-      {/* HEADER */}
-      <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans">
+      {/* Header & Print Module */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-gray-800 pb-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-            <Activity className="text-emerald-500 w-8 h-8" />
-            Greenhouse Core
-          </h1>
-          <p className="text-slate-400 text-sm mt-1 ml-11">ESP32 Telemetry & Control System</p>
+          <h1 className="text-3xl font-bold text-green-400 flex items-center gap-2">🌱 Tech Pechay Hydroponic System</h1>
+          <p className="text-gray-400">Smart Greenhouse Monitoring & Management Console</p>
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800/80 border border-slate-700 rounded-full shadow-sm">
-          <div className="relative">
-             <Wifi className={`w-4 h-4 ${isConnected ? 'text-emerald-400' : 'text-red-400'}`} />
-             {isConnected && <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />}
-          </div>
-          <span className="text-sm font-medium text-slate-300">
-            {isConnected ? 'ESP32 Connected (MQTT)' : 'Disconnected'}
-          </span>
+        <div className="flex gap-3">
+          <button onClick={() => window.print()} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition">
+            <Printer className="w-4 h-4 text-green-400" /> Print Report
+          </button>
+          <button onClick={() => setIsLoggedIn(false)} className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition">
+            Logout
+          </button>
         </div>
       </header>
 
-      {/* TOP STATS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <StatCard 
-          title="Ambient Temperature" 
-          value={readings.temp} 
-          unit="°C" 
-          icon={Thermometer} 
-          color="text-orange-400" 
-        />
-        <StatCard 
-          title="Air Humidity" 
-          value={readings.humidity} 
-          unit="%" 
-          icon={Droplets} 
-          color="text-blue-400" 
-        />
-        <StatCard 
-          title="Substrate Moisture" 
-          value={readings.moisture} 
-          unit="%" 
-          icon={CloudRain} 
-          color="text-emerald-400" 
-        />
-      </div>
-
-      {/* MIDDLE CHART */}
-      <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-5 mb-6 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-indigo-400" />
-            24H Telemetry History
-          </h2>
+      {/* Harvest Time Approximation Module */}
+      <div className="bg-gradient-to-r from-gray-800 to-gray-850 p-6 rounded-2xl border border-gray-700 shadow-xl mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-green-300 flex items-center gap-2">
+              <Calendar className="w-5 h-5" /> Harvest Time Approximation (Batch Maturity)
+            </h2>
+            <p className="text-sm text-gray-400">Estimated Maturity Window: 30–35 days for optimal Tech Pechay harvest.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400">Planting Date:</label>
+            <input type="date" value={plantingDate} onChange={(e) => setPlantingDate(e.target.value)} className="bg-gray-900 border border-gray-700 text-sm px-3 py-1.5 rounded-lg text-white" />
+          </div>
         </div>
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={history} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-              <XAxis 
-                dataKey="time" 
-                stroke="#64748b" 
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                minTickGap={30}
-              />
-              <YAxis 
-                stroke="#64748b" 
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                domain={['auto', 'auto']}
-              />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '0.5rem', color: '#f8fafc' }}
-                itemStyle={{ fontWeight: 500 }}
-              />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: '14px', paddingTop: '10px' }}/>
-              <Line type="monotone" dataKey="temp" name="Temp (°C)" stroke="#fb923c" strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-              <Line type="monotone" dataKey="humidity" name="Humidity (%)" stroke="#60a5fa" strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-              <Line type="monotone" dataKey="moisture" name="Moisture (%)" stroke="#34d399" strokeWidth={2} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* BOTTOM SECTION: Controls & Settings */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Actuators (Takes up 2 columns on large screens) */}
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2 px-1">
-            <Power className="w-5 h-5 text-slate-400" />
-            Actuator Override
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <ActuatorCard 
-              title="Exhaust Fan" 
-              deviceKey="fan" 
-              icon={Fan} 
-              colorClass="text-slate-400"
-              activeColorClass="text-cyan-400"
-            />
-            <ActuatorCard 
-              title="Grow Lights" 
-              deviceKey="lights" 
-              icon={Lightbulb} 
-              colorClass="text-slate-400"
-              activeColorClass="text-yellow-400"
-            />
-            <ActuatorCard 
-              title="Water Pump" 
-              deviceKey="pump" 
-              icon={RotateCcw} 
-              colorClass="text-slate-400"
-              activeColorClass="text-blue-400"
-            />
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-300">Days Elapsed: <strong className="text-white">{harvestInfo.daysElapsed} Days</strong></span>
+            <span className="text-gray-300">Estimated Target Date: <strong className="text-green-400">{harvestInfo.targetDate}</strong></span>
+            <span className="text-green-400 font-bold">{harvestInfo.progress}% Complete</span>
+          </div>
+          <div className="w-full bg-gray-900 rounded-full h-3 border border-gray-700 overflow-hidden">
+            <div className="bg-gradient-to-r from-green-500 to-emerald-400 h-full transition-all duration-500" style={{ width: `${harvestInfo.progress}%` }}></div>
           </div>
         </div>
-
-        {/* Settings Panel */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2 px-1">
-            <Settings className="w-5 h-5 text-slate-400" />
-            Automation Triggers
-          </h2>
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-5 shadow-lg space-y-5">
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 flex justify-between">
-                <span>Fan Target (Cooling)</span>
-                <span className="text-cyan-400">{thresholds.fanTempTarget}°C</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500">Trigger if &gt;</span>
-                <input 
-                  type="range" 
-                  min="20" max="40" step="1"
-                  value={thresholds.fanTempTarget}
-                  onChange={(e) => handleThresholdChange('fanTempTarget', e.target.value)}
-                  className="w-full accent-cyan-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 flex justify-between">
-                <span>Light Target (Heating)</span>
-                <span className="text-yellow-400">{thresholds.lightTempTarget}°C</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500">Trigger if &lt;</span>
-                <input 
-                  type="range" 
-                  min="10" max="30" step="1"
-                  value={thresholds.lightTempTarget}
-                  onChange={(e) => handleThresholdChange('lightTempTarget', e.target.value)}
-                  className="w-full accent-yellow-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 flex justify-between">
-                <span>Pump Target (Watering)</span>
-                <span className="text-blue-400">{thresholds.pumpMoistureTarget}%</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500">Trigger if &lt;</span>
-                <input 
-                  type="range" 
-                  min="10" max="80" step="1"
-                  value={thresholds.pumpMoistureTarget}
-                  onChange={(e) => handleThresholdChange('pumpMoistureTarget', e.target.value)}
-                  className="w-full accent-blue-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      <style dangerouslySetInnerHTML={{__html: `
-        .animate-spin-slow {
-          animation: spin 3s linear infinite;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: currentColor;
-          cursor: pointer;
-        }
-      `}} />
+      {/* Sensor Cards (Including Water Level) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400 mb-1">Temperature</p>
+            <p className="text-3xl font-bold">{sensors.temp}°C</p>
+          </div>
+          <Thermometer className="text-orange-400 w-10 h-10" />
+        </div>
+        
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400 mb-1">Humidity</p>
+            <p className="text-3xl font-bold">{sensors.humidity}%</p>
+          </div>
+          <CloudRain className="text-blue-400 w-10 h-10" />
+        </div>
+
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400 mb-1">Substrate Moisture</p>
+            <p className="text-3xl font-bold">{sensors.moisture}%</p>
+          </div>
+          <Droplets className="text-teal-400 w-10 h-10" />
+        </div>
+
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400 mb-1">Water Reservoir</p>
+            <p className="text-3xl font-bold">{sensors.waterLevel}%</p>
+          </div>
+          <Waves className="text-cyan-400 w-10 h-10" />
+        </div>
+      </div>
+
+      {/* Main Grid: Telemetry & Actuators */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg">
+          <h2 className="text-xl font-semibold mb-4">Live Telemetry History</h2>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={history}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
+                <YAxis stroke="#9CA3AF" fontSize={12} />
+                <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none' }} />
+                <Line type="monotone" dataKey="temp" stroke="#F97316" strokeWidth={2} name="Temp (°C)" />
+                <Line type="monotone" dataKey="moisture" stroke="#14B8A6" strokeWidth={2} name="Moisture (%)" />
+                <Line type="monotone" dataKey="waterLevel" stroke="#06B6D4" strokeWidth={2} name="Water Level (%)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col justify-between gap-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Actuator Status</h2>
+            <div className="flex gap-4">
+              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.fan ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50' : 'bg-gray-900 text-gray-500'}`}>
+                <Fan className={`w-7 h-7 mb-1 ${actuators.fan ? 'animate-spin' : ''}`} />
+                <span className="text-xs font-medium">Exhaust Fan</span>
+              </div>
+              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.light ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50' : 'bg-gray-900 text-gray-500'}`}>
+                <Lightbulb className="w-7 h-7 mb-1" />
+                <span className="text-xs font-medium">Grow Lights</span>
+              </div>
+              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.pump ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50' : 'bg-gray-900 text-gray-500'}`}>
+                <Power className="w-7 h-7 mb-1" />
+                <span className="text-xs font-medium">Water Pump</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-xl font-semibold mb-3">Automation Thresholds</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <label className="text-gray-300">Max Temp (Fan On) °C</label>
+                <input type="number" value={thresholds.hotTemp} onChange={(e) => setThresholds({...thresholds, hotTemp: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <label className="text-gray-300">Min Temp (Lights On) °C</label>
+                <input type="number" value={thresholds.coldTemp} onChange={(e) => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <label className="text-gray-300">Min Moisture (Pump On) %</label>
+                <input type="number" value={thresholds.dryMoisture} onChange={(e) => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Data Manipulation Modules */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-green-400" /> Add Manual Log</h3>
+          <form onSubmit={handleAddLog} className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Time Label</label>
+              <input type="text" value={newLogTime} onChange={(e) => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 block mb-1">Recorded Temp (°C)</label>
+              <input type="number" step="0.1" value={newLogTemp} onChange={(e) => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+            </div>
+            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-semibold py-2 rounded-lg text-sm transition">Insert Record</button>
+          </form>
+        </div>
+
+        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg lg:col-span-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+            <h3 className="text-lg font-semibold">Telemetry Log Database</h3>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search logs..." className="w-full bg-gray-900 border border-gray-700 text-sm pl-9 pr-4 py-1.5 rounded-lg text-white focus:outline-none focus:border-green-400" />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto max-h-48 overflow-y-auto">
+            <table className="w-full text-left text-sm text-gray-300">
+              <thead className="bg-gray-900 text-gray-400 uppercase text-xs sticky top-0">
+                <tr>
+                  <th className="p-3">Time</th>
+                  <th className="p-3">Temp</th>
+                  <th className="p-3">Moisture</th>
+                  <th className="p-3">Water</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {filteredHistory.length > 0 ? (
+                  filteredHistory.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-750">
+                      <td className="p-3 font-medium text-white">{item.time}</td>
+                      <td className="p-3">{item.temp}°C</td>
+                      <td className="p-3">{item.moisture}%</td>
+                      <td className="p-3">{item.waterLevel}%</td>
+                      <td className="p-3"><span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400 border border-green-500/20">{item.status}</span></td>
+                      <td className="p-3 text-right">
+                        <button onClick={() => handleDeleteLog(item.id)} className="text-red-400 hover:text-red-300 p-1"><Trash2 className="w-4 h-4" /></button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="p-4 text-center text-gray-500">No matching records found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
+};
+
+export default App;
