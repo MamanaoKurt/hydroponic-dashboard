@@ -17,6 +17,7 @@ const App = () => {
   // --- PWA INSTALL STATE ---
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   // --- ESP32 WIFI MODAL STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
@@ -71,7 +72,6 @@ const App = () => {
     localStorage.setItem('pekinensis_currUser', currentUser);
     localStorage.setItem('pekinensis_activeSsid', activeSsid);
 
-    // Check if app is already running in standalone installed mode
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
       setIsInstalled(true);
     }
@@ -94,7 +94,6 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
-  // Directly trigger native installation browser popup
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -104,7 +103,7 @@ const App = () => {
         setInstallPrompt(null);
       }
     } else {
-      alert("To install Pekinensis, click the install icon in your browser's address bar, or open your browser menu (⋮) and select 'Install Pekinensis Hydroponic Hub'.");
+      setInstallModalOpen(true);
     }
   };
 
@@ -372,6 +371,27 @@ const App = () => {
           <button onClick={handleLogout} className="bg-[#0B0F19] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold">Logout</button>
         </div>
       </header>
+
+      {/* Install Guide Modal */}
+      {installModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md relative shadow-2xl">
+            <button onClick={() => setInstallModalOpen(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white"><X className="w-5 h-5"/></button>
+            <h3 className="text-lg font-bold text-[#34D399] mb-2 flex items-center gap-2">🌱 Install Pekinensis</h3>
+            <p className="text-xs text-gray-300 mb-4">
+              Your browser is currently holding the installation prompt. You can install this app instantly with one click:
+            </p>
+            <div className="bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937] space-y-2 text-xs text-gray-300 mb-4">
+              <p>• Look at your browser's address bar at the top right.</p>
+              <p>• Click the <strong className="text-[#34D399]">Install icon (➕ or monitor)</strong> inside the URL bar.</p>
+              <p>• Or, click your browser menu (<strong className="text-white">⋮</strong>) and select <strong className="text-[#22D3EE]">'Install Pekinensis Hydroponic Hub'</strong>.</p>
+            </div>
+            <button onClick={() => setInstallModalOpen(false)} className="w-full bg-[#10B981] text-[#0B0F19] font-bold py-3 rounded-xl text-xs transition">
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Wi-Fi Modal */}
       {wifiModalOpen && (
