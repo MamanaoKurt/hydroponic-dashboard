@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableCell, TableRow, WidthType, HeadingLevel } from 'docx';
 
 const App = () => {
@@ -14,13 +14,16 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- ESP32 WIFI MODAL STATE (CLEARED PLACEHOLDERS) ---
+  // --- PWA INSTALL PROMPT STATE ---
+  const [installPrompt, setInstallPrompt] = useState(null);
+
+  // --- ESP32 WIFI MODAL STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [scanningWifi, setScanningWifi] = useState(false);
-  const [availableNetworks, setAvailableNetworks] = useState([]); // Starts empty on standby
+  const [availableNetworks, setAvailableNetworks] = useState([]);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
-  const [espIpAddress, setEspIpAddress] = useState('192.168.100.220');
+  const [espIpAddress, setEspIpAddress] = useState('192.168.4.1');
   const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Not Connected');
   const [connectingStatus, setConnectingStatus] = useState(false);
   const [customSsidModal, setCustomSsidModal] = useState(false);
@@ -66,7 +69,27 @@ const App = () => {
     localStorage.setItem('techPechay_logged', isLoggedIn);
     localStorage.setItem('techPechay_currUser', currentUser);
     localStorage.setItem('techPechay_activeSsid', activeSsid);
+
+    // Listen for PWA installation prompt
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
 
   // Live Simulation & Actuator Logic
   useEffect(() => {
@@ -98,7 +121,7 @@ const App = () => {
     });
   };
 
-  // Fetch real networks from ESP32 API on standby
+  // Fetch real networks from ESP32 API endpoint
   const handleScanRealWifi = async () => {
     setScanningWifi(true);
     try {
@@ -110,7 +133,7 @@ const App = () => {
         setAvailableNetworks([]);
       }
     } catch (err) {
-      console.log('ESP32 not connected or offline.');
+      console.log('ESP32 offline or IP unreachable.');
       setAvailableNetworks([]);
     } finally {
       setScanningWifi(false);
@@ -317,6 +340,11 @@ const App = () => {
           <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
+          {installPrompt && (
+            <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition">
+              <Download className="w-4 h-4" /> Install App
+            </button>
+          )}
           <button onClick={() => setWifiModalOpen(true)} className="px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] text-[#34D399]">
             <Wifi className="w-4 h-4" /> {activeSsid}
           </button>
@@ -344,7 +372,6 @@ const App = () => {
               <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-1.5 text-xs text-white" />
             </div>
 
-            {/* Scanned Networks List (Empty on Standby until scanned from ESP32) */}
             <div className="space-y-2 mb-4 max-h-52 overflow-y-auto pr-1">
               {scanningWifi ? (
                 <div className="text-center py-6 text-gray-400 text-xs flex flex-col items-center gap-2">
@@ -378,7 +405,7 @@ const App = () => {
                 })
               ) : (
                 <div className="text-center py-8 text-gray-500 text-xs bg-[#0B0F19] rounded-2xl border border-[#1F2937]">
-                  No networks loaded. Click 'Rescan' to fetch from ESP32 hardware.
+                  No networks loaded. Click 'Rescan' to fetch live Wi-Fi list from your ESP32.
                 </div>
               )}
             </div>
