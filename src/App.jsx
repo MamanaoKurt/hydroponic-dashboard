@@ -13,26 +13,17 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- MODERN WIFI SELECTOR STATE ---
+  // --- REAL ESP32 WIFI SCANNER STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [scanningWifi, setScanningWifi] = useState(false);
-  const [availableNetworks, setAvailableNetworks] = useState([
-    { ssid: 'Greenhouse_Router_5G', rssi: -45, secure: true, channels: 'Ch 36' },
-    { ssid: 'TechPechay_Mesh_Ext', rssi: -62, secure: true, channels: 'Ch 11' },
-    { ssid: 'Smart_Bro_LTE_A2', rssi: -70, secure: true, channels: 'Ch 6' },
-    { ssid: 'Greenhouse_Guest_WiFi', rssi: -80, secure: false, channels: 'Ch 1' }
-  ]);
+  const [availableNetworks, setAvailableNetworks] = useState([]);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
   const [espConnected, setEspConnected] = useState(true);
   const [connectingStatus, setConnectingStatus] = useState(false);
+  const [espIpAddress, setEspIpAddress] = useState('192.168.4.1'); // Default ESP32 AP IP
 
-  // Auto-scan networks when opening Wi-Fi modal (just like a phone/PC)
-  useEffect(() => {
-    if (wifiModalOpen) {
-      handleScanWifi();
-    }
-  }, [wifiModalOpen]);
+  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Not Connected');
 
   // --- SENSORS & TELEMETRY ---
   const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
@@ -51,17 +42,15 @@ const App = () => {
     return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
-  // --- ACTUATORS (MANUAL + AUTO) ---
+  // --- ACTUATORS ---
   const [actuators, setActuators] = useState({
     fan: { state: false, mode: 'auto' },
     light: { state: false, mode: 'auto' },
     pump: { state: false, mode: 'auto' }
   });
 
-  // --- MODULE STATES ---
   const [searchQuery, setSearchQuery] = useState('');
   const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('techPechay_plantingDate') || '2026-03-01');
-  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Greenhouse_Router_5G');
 
   // Manual Log Form State
   const [newLogTime, setNewLogTime] = useState('');
@@ -70,7 +59,6 @@ const App = () => {
   const [newLogMoisture, setNewLogMoisture] = useState('');
   const [newLogWater, setNewLogWater] = useState('');
 
-  // Save state to localStorage
   useEffect(() => {
     localStorage.setItem('techPechay_users', JSON.stringify(users));
     localStorage.setItem('techPechay_history', JSON.stringify(history));
@@ -81,7 +69,7 @@ const App = () => {
     localStorage.setItem('techPechay_activeSsid', activeSsid);
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
-  // Live Simulation & Actuator Automatic/Manual Logic
+  // Live Simulation & Actuator Logic
   useEffect(() => {
     if (!isLoggedIn) return;
     const interval = setInterval(() => {
@@ -93,51 +81,42 @@ const App = () => {
       setSensors({ temp: newTemp, humidity: newHumid, moisture: newMoisture, waterLevel: newWater });
 
       setActuators(prev => ({
-        fan: {
-          state: prev.fan.mode === 'auto' ? newTemp > thresholds.hotTemp : prev.fan.state,
-          mode: prev.fan.mode
-        },
-        light: {
-          state: prev.light.mode === 'auto' ? newTemp < thresholds.coldTemp : prev.light.state,
-          mode: prev.light.mode
-        },
-        pump: {
-          state: prev.pump.mode === 'auto' ? newMoisture < thresholds.dryMoisture : prev.pump.state,
-          mode: prev.pump.mode
-        }
+        fan: { state: prev.fan.mode === 'auto' ? newTemp > thresholds.hotTemp : prev.fan.state, mode: prev.fan.mode },
+        light: { state: prev.light.mode === 'auto' ? newTemp < thresholds.coldTemp : prev.light.state, mode: prev.light.mode },
+        pump: { state: prev.pump.mode === 'auto' ? newMoisture < thresholds.dryMoisture : prev.pump.state, mode: prev.pump.mode }
       }));
     }, 4000);
 
     return () => clearInterval(interval);
   }, [isLoggedIn, thresholds]);
 
-  // Toggle Actuator
   const handleToggleActuator = (key) => {
     setActuators(prev => {
       const current = prev[key];
-      if (current.mode === 'auto') {
-        return { ...prev, [key]: { state: true, mode: 'manual' } };
-      } else if (current.state === true) {
-        return { ...prev, [key]: { state: false, mode: 'manual' } };
-      } else {
-        return { ...prev, [key]: { state: false, mode: 'auto' } };
-      }
+      if (current.mode === 'auto') return { ...prev, [key]: { state: true, mode: 'manual' } };
+      if (current.state === true) return { ...prev, [key]: { state: false, mode: 'manual' } };
+      return { ...prev, [key]: { state: false, mode: 'auto' } };
     });
   };
 
-  // Modern Device Wi-Fi Scanner Simulation
-  const handleScanWifi = () => {
+  // Fetch REAL Wi-Fi Networks from ESP32 Hardware API
+  const handleScanRealWifi = async () => {
     setScanningWifi(true);
-    setTimeout(() => {
-      setAvailableNetworks([
-        { ssid: 'Greenhouse_Router_5G', rssi: -42, secure: true, channels: 'Ch 36' },
-        { ssid: 'TechPechay_Mesh_Ext', rssi: -58, secure: true, channels: 'Ch 11' },
-        { ssid: 'Smart_Bro_LTE_A2', rssi: -68, secure: true, channels: 'Ch 6' },
-        { ssid: 'Greenhouse_Guest_WiFi', rssi: -78, secure: false, channels: 'Ch 1' },
-        { ssid: 'Agri_IoT_Network', rssi: -85, secure: true, channels: 'Ch 3' }
-      ]);
+    try {
+      const response = await fetch(`http://${espIpAddress}/scan`, { method: 'GET' });
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableNetworks(data);
+      } else {
+        alert('Could not reach ESP32. Ensure you are connected to the ESP32 Wi-Fi AP.');
+      }
+    } catch (err) {
+      console.error('Failed to fetch real Wi-Fi networks from ESP32:', err);
+      // Fallback message or simulated alert if ESP32 is offline
+      alert('ESP32 connection timeout. Make sure ESP32 IP is correct.');
+    } finally {
       setScanningWifi(false);
-    }, 1000);
+    }
   };
 
   const handleConnectToNetwork = () => {
@@ -153,7 +132,7 @@ const App = () => {
     }, 1500);
   };
 
-  // --- AUTH HANDLERS ---
+  // --- AUTH & CRUD HANDLERS ---
   const handleRegister = (e) => {
     e.preventDefault();
     setAuthError(''); setAuthSuccess('');
@@ -168,11 +147,8 @@ const App = () => {
     e.preventDefault();
     setAuthError(''); setAuthSuccess('');
     const found = users.find(u => u.username === username && u.password === password);
-    if (found) {
-      setIsLoggedIn(true); setCurrentUser(username); setUsername(''); setPassword('');
-    } else {
-      setAuthError('Invalid username or password.');
-    }
+    if (found) { setIsLoggedIn(true); setCurrentUser(username); setUsername(''); setPassword(''); }
+    else { setAuthError('Invalid username or password.'); }
   };
 
   const handleLogout = () => {
@@ -181,7 +157,6 @@ const App = () => {
     localStorage.removeItem('techPechay_currUser');
   };
 
-  // --- CRUD HANDLERS ---
   const handleAddLog = (e) => {
     e.preventDefault();
     if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture || !newLogWater) return;
@@ -200,7 +175,7 @@ const App = () => {
 
   const handleDeleteLog = (id) => setHistory(history.filter(item => item.id !== id));
 
-  // --- HARVEST TIME APPROXIMATION (Chinese Cabbage / Pechay 30-35 days) ---
+  // Harvest calculation for Tech Pechay (Chinese Cabbage - 30-35 days)
   const calculateHarvestProgress = () => {
     const planted = new Date(plantingDate);
     const today = new Date();
@@ -219,7 +194,6 @@ const App = () => {
     String(item.temp).includes(searchQuery)
   );
 
-  // --- EXPORT TABULAR DOCX ---
   const handleDownloadDocx = () => {
     let htmlContent = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -253,31 +227,13 @@ const App = () => {
         <h3>Historical Telemetry Database</h3>
         <table>
           <thead>
-            <tr>
-              <th>Time</th>
-              <th>Temp (°C)</th>
-              <th>Humidity (%)</th>
-              <th>Moisture (%)</th>
-              <th>Water (%)</th>
-              <th>Status</th>
-            </tr>
+            <tr><th>Time</th><th>Temp (°C)</th><th>Humidity (%)</th><th>Moisture (%)</th><th>Water (%)</th><th>Status</th></tr>
           </thead>
           <tbody>
     `;
-
     history.forEach(item => {
-      htmlContent += `
-        <tr>
-          <td>${item.time}</td>
-          <td>${item.temp}</td>
-          <td>${item.humidity ?? '-'}</td>
-          <td>${item.moisture}</td>
-          <td>${item.waterLevel ?? '-'}</td>
-          <td>${item.status}</td>
-        </tr>
-      `;
+      htmlContent += `<tr><td>${item.time}</td><td>${item.temp}</td><td>${item.humidity ?? '-'}</td><td>${item.moisture}</td><td>${item.waterLevel ?? '-'}</td><td>${item.status}</td></tr>`;
     });
-
     htmlContent += `</tbody></table></body></html>`;
 
     const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
@@ -291,54 +247,48 @@ const App = () => {
     URL.revokeObjectURL(url);
   };
 
-  // --- AUTH SCREEN ---
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
         <div className="bg-[#111827] border border-[#1F2937] p-8 rounded-3xl shadow-[8px_8px_20px_#05070c,-8px_-8px_20px_#1d283c] w-full max-w-md">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-[#34D399] drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">🌱 Tech Pechay Hub</h1>
+            <h1 className="text-2xl font-bold text-[#34D399]">🌱 Tech Pechay Hub</h1>
             <p className="text-gray-400 text-sm mt-1">{isRegistering ? 'Create New Account' : 'Secure Login Portal'}</p>
           </div>
           {authError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-sm mb-4">{authError}</div>}
           {authSuccess && <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl text-sm mb-4">{authSuccess}</div>}
-
           {!isRegistering ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">Username</label>
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold block mb-1">Username</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399]" required />
               </div>
               <div>
-                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold block mb-1">Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399]" required />
               </div>
-              <button type="submit" className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-3.5 rounded-xl transition shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#1b2e23] flex items-center justify-center gap-2">
+              <button type="submit" className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2">
                 <LogIn className="w-4 h-4" /> Sign In
               </button>
               <div className="text-center mt-4">
-                <button type="button" onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-[#22D3EE] hover:underline">
-                  Don't have an account? Sign up
-                </button>
+                <button type="button" onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-[#22D3EE] hover:underline">Don't have an account? Sign up</button>
               </div>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
-                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">New Username</label>
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Choose username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold block mb-1">New Username</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399]" required />
               </div>
               <div>
-                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">New Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Choose password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold block mb-1">New Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399]" required />
               </div>
-              <button type="submit" className="w-full bg-[#06B6D4] hover:bg-[#0891B2] text-[#0B0F19] font-bold py-3.5 rounded-xl transition shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#0f2933] flex items-center justify-center gap-2">
+              <button type="submit" className="w-full bg-[#06B6D4] hover:bg-[#0891B2] text-[#0B0F19] font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2">
                 <UserPlus className="w-4 h-4" /> Create Account
               </button>
               <div className="text-center mt-4">
-                <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-gray-400 hover:underline">
-                  Already have an account? Log in
-                </button>
+                <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-gray-400 hover:underline">Already have an account? Log in</button>
               </div>
             </form>
           )}
@@ -347,114 +297,92 @@ const App = () => {
     );
   }
 
-  // --- MAIN NEUMORPHIC DASHBOARD ---
   return (
     <div className="min-h-screen bg-[#0B0F19] text-gray-100 p-4 md:p-8 font-sans">
-      
-      {/* Top Header */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2 drop-shadow-[0_0_12px_rgba(52,211,153,0.3)]">
-            🌱 Tech Pechay Hydroponic System
-          </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong>
-          </p>
+          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2">🌱 Tech Pechay Hydroponic System</h1>
+          <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
-
         <div className="flex flex-wrap gap-3 items-center">
-          {/* Wi-Fi Selector Trigger */}
-          <button onClick={() => setWifiModalOpen(true)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335] ${espConnected ? 'text-[#34D399]' : 'text-amber-400'}`}>
+          <button onClick={() => setWifiModalOpen(true)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] ${espConnected ? 'text-[#34D399]' : 'text-amber-400'}`}>
             <Wifi className="w-4 h-4" /> {activeSsid} ({espConnected ? 'Connected' : 'Offline'})
           </button>
-
-          <button onClick={handleDownloadDocx} className="bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#22D3EE] transition shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335]">
+          <button onClick={handleDownloadDocx} className="bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#22D3EE]">
             <FileText className="w-4 h-4" /> Export Tabular .DOCX
           </button>
-
-          <button onClick={handleLogout} className="bg-[#0B0F19] hover:bg-[#201317] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold transition shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335]">
-            Logout
-          </button>
+          <button onClick={handleLogout} className="bg-[#0B0F19] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold">Logout</button>
         </div>
       </header>
 
-      {/* Modern Phone/PC-Style Wi-Fi Selector Modal */}
+      {/* Real Hardware Wi-Fi Scanner Modal */}
       {wifiModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md shadow-[8px_8px_20px_#05070c]">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-base font-bold text-[#22D3EE] flex items-center gap-2"><Wifi className="w-5 h-5"/> ESP32 Wi-Fi Networks</h3>
-              <button onClick={handleScanWifi} className="p-2 bg-[#0B0F19] border border-[#1F2937] rounded-xl text-xs text-[#34D399] flex items-center gap-1 hover:bg-[#161e31]">
-                <RefreshCw className={`w-3.5 h-3.5 ${scanningWifi ? 'animate-spin' : ''}`} /> Scan
+              <h3 className="text-base font-bold text-[#22D3EE] flex items-center gap-2"><Wifi className="w-5 h-5"/> Live ESP32 Wi-Fi Finder</h3>
+              <button onClick={handleScanRealWifi} className="p-2 bg-[#0B0F19] border border-[#1F2937] rounded-xl text-xs text-[#34D399] flex items-center gap-1 hover:bg-[#161e31]">
+                <RefreshCw className={`w-3.5 h-3.5 ${scanningWifi ? 'animate-spin' : ''}`} /> Scan Real
               </button>
             </div>
-            <p className="text-xs text-gray-400 mb-4">Click any nearby network discovered by your ESP32 module to connect.</p>
+            
+            <div className="mb-3">
+              <label className="text-[10px] text-gray-400 uppercase block mb-1">ESP32 Device IP Address</label>
+              <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-1.5 text-xs text-white" />
+            </div>
 
-            {/* List of Scanned Networks */}
-            <div className="space-y-2 mb-4 max-h-52 overflow-y-auto pr-1">
+            <p className="text-xs text-gray-400 mb-3">Click 'Scan Real' to query networks directly from your hardware.</p>
+
+            <div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-1">
               {scanningWifi ? (
-                <div className="text-center py-8 text-gray-400 text-xs flex flex-col items-center gap-2">
-                  <RefreshCw className="w-6 h-6 animate-spin text-[#22D3EE]" />
-                  Scanning nearby SSIDs...
+                <div className="text-center py-6 text-gray-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#22D3EE]" />
+                  Querying ESP32 hardware scanner...
                 </div>
-              ) : (
+              ) : availableNetworks.length > 0 ? (
                 availableNetworks.map((net, idx) => (
-                  <div 
-                    key={idx} 
-                    onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} 
-                    className={`p-3 rounded-2xl border cursor-pointer transition flex justify-between items-center ${selectedNetwork?.ssid === net.ssid ? 'bg-[#22D3EE]/10 border-[#22D3EE] text-white shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'bg-[#0B0F19] border-[#1F2937] text-gray-300 hover:bg-[#161e31]'}`}
-                  >
+                  <div key={idx} onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} className={`p-3 rounded-2xl border cursor-pointer transition flex justify-between items-center ${selectedNetwork?.ssid === net.ssid ? 'bg-[#22D3EE]/10 border-[#22D3EE] text-white' : 'bg-[#0B0F19] border-[#1F2937] text-gray-300 hover:bg-[#161e31]'}`}>
                     <div className="flex items-center gap-3">
-                      <Wifi className={`w-4 h-4 ${net.rssi > -60 ? 'text-[#34D399]' : net.rssi > -75 ? 'text-amber-400' : 'text-gray-500'}`} />
+                      <Wifi className="w-4 h-4 text-[#34D399]" />
                       <div>
                         <p className="text-xs font-bold">{net.ssid}</p>
-                        <p className="text-[10px] text-gray-500">{net.secure ? 'Secured (WPA2)' : 'Open Network'} • {net.channels}</p>
+                        <p className="text-[10px] text-gray-500">RSSI: {net.rssi} dBm • {net.secure ? 'Secured' : 'Open'}</p>
                       </div>
                     </div>
                     {net.secure && <Lock className="w-3.5 h-3.5 text-gray-500" />}
                     {selectedNetwork?.ssid === net.ssid && <CheckCircle className="w-4 h-4 text-[#22D3EE]" />}
                   </div>
                 ))
+              ) : (
+                <div className="text-center py-6 text-gray-500 text-xs">No networks scanned yet. Click 'Scan Real'.</div>
               )}
             </div>
 
-            {/* Password input when a secure network is selected */}
             {selectedNetwork && (
               <div className="space-y-3 mb-4 bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937]">
                 <p className="text-xs font-bold text-[#34D399]">Connect to: {selectedNetwork.ssid}</p>
                 {selectedNetwork.secure && (
                   <div>
-                    <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Enter Password</label>
-                    <input 
-                      type="password" 
-                      value={wifiPassword} 
-                      onChange={e => setWifiPassword(e.target.value)} 
-                      placeholder="Network Password" 
-                      className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#22D3EE]" 
-                      autoFocus
-                    />
+                    <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Password</label>
+                    <input type="password" value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} placeholder="Password" className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-3.5 py-2 text-xs text-white" autoFocus />
                   </div>
                 )}
-                <button 
-                  onClick={handleConnectToNetwork} 
-                  disabled={connectingStatus}
-                  className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2"
-                >
+                <button onClick={handleConnectToNetwork} disabled={connectingStatus} className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2">
                   {connectingStatus ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
-                  {connectingStatus ? 'Connecting to ESP32...' : `Connect (${selectedNetwork.ssid})`}
+                  {connectingStatus ? 'Connecting...' : `Connect (${selectedNetwork.ssid})`}
                 </button>
               </div>
             )}
 
             <div className="flex justify-end pt-1">
-              <button onClick={() => { setWifiModalOpen(false); setSelectedNetwork(null); }} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold rounded-xl text-xs transition">Close</button>
+              <button onClick={() => { setWifiModalOpen(false); setSelectedNetwork(null); }} className="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl text-xs">Close</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Harvest Time Approximation Module (Chinese Cabbage / Pechay 30-35 days) */}
-      <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] mb-8">
+      {/* Harvest Time Approximation Module */}
+      <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] mb-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
             <h2 className="text-base font-semibold text-[#34D399] flex items-center gap-2">
@@ -462,7 +390,7 @@ const App = () => {
             </h2>
             <p className="text-xs text-gray-400">Optimal Maturity Window: 30–35 days in hydroponic system.</p>
           </div>
-          <div className="flex items-center gap-2 bg-[#0B0F19] px-3 py-1.5 rounded-xl border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]">
+          <div className="flex items-center gap-2 bg-[#0B0F19] px-3 py-1.5 rounded-xl border border-[#1F2937]">
             <label className="text-xs text-gray-400">Planting Date:</label>
             <input type="date" value={plantingDate} onChange={e => setPlantingDate(e.target.value)} className="bg-transparent text-xs text-white focus:outline-none" />
           </div>
@@ -474,60 +402,47 @@ const App = () => {
             <span className="text-gray-300">Target Harvest Date: <strong className="text-[#34D399]">{harvestInfo.targetDate}</strong></span>
             <span className="text-[#22D3EE] font-bold">{harvestInfo.progress}% Complete</span>
           </div>
-          <div className="w-full bg-[#0B0F19] rounded-full h-3 border border-[#1F2937] overflow-hidden shadow-[inset_2px_2px_5px_#05070c]">
-            <div className="bg-gradient-to-r from-[#06B6D4] to-[#10B981] h-full transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" style={{ width: `${harvestInfo.progress}%` }}></div>
+          <div className="w-full bg-[#0B0F19] rounded-full h-3 border border-[#1F2937] overflow-hidden">
+            <div className="bg-gradient-to-r from-[#06B6D4] to-[#10B981] h-full transition-all duration-500" style={{ width: `${harvestInfo.progress}%` }}></div>
           </div>
         </div>
       </div>
 
-      {/* Sensor Cards with Neumorphic Depth */}
+      {/* Sensor Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Temperature</p>
             <p className="text-3xl font-bold text-white">{sensors.temp}<span className="text-lg text-orange-400">°C</span></p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
-            <Thermometer className="text-orange-400 w-7 h-7" />
-          </div>
+          <Thermometer className="text-orange-400 w-7 h-7" />
         </div>
-        
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Humidity</p>
             <p className="text-3xl font-bold text-white">{sensors.humidity}<span className="text-lg text-[#22D3EE]">%</span></p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
-            <CloudRain className="text-[#22D3EE] w-7 h-7" />
-          </div>
+          <CloudRain className="text-[#22D3EE] w-7 h-7" />
         </div>
-
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Substrate Moisture</p>
             <p className="text-3xl font-bold text-white">{sensors.moisture}<span className="text-lg text-[#34D399]">%</span></p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
-            <Droplets className="text-[#34D399] w-7 h-7" />
-          </div>
+          <Droplets className="text-[#34D399] w-7 h-7" />
         </div>
-
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Water Reservoir</p>
             <p className="text-3xl font-bold text-white">{sensors.waterLevel}<span className="text-lg text-cyan-400">%</span></p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
-            <Waves className="text-cyan-400 w-7 h-7" />
-          </div>
+          <Waves className="text-cyan-400 w-7 h-7" />
         </div>
       </div>
 
-      {/* Main Grid: Telemetry & Actuator Controls (Manual + Auto) */}
+      {/* Main Grid: Telemetry & Actuator Controls */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        
-        {/* Telemetry Graph */}
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937]">
           <h2 className="text-lg font-semibold mb-4 text-gray-200">Live Telemetry History</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -544,31 +459,24 @@ const App = () => {
           </div>
         </div>
 
-        {/* Actuator Status & Manual/Auto Override */}
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex flex-col justify-between gap-6">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex flex-col justify-between gap-6">
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-200">Actuators & Manual Override</h2>
               <span className="text-xs text-gray-400 bg-[#0B0F19] px-3 py-1 rounded-xl border border-[#1F2937]">Click card to override</span>
             </div>
-            
             <div className="grid grid-cols-3 gap-3">
-              {/* Fan */}
-              <button onClick={() => handleToggleActuator('fan')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+              <button onClick={() => handleToggleActuator('fan')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
                 <Fan className={`w-7 h-7 mb-2 ${actuators.fan.state ? 'animate-spin text-[#34D399]' : ''}`} />
                 <span className="text-xs font-bold">Exhaust Fan</span>
                 <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.fan.mode}: {actuators.fan.state ? 'ON' : 'OFF'}</span>
               </button>
-
-              {/* Lights */}
-              <button onClick={() => handleToggleActuator('light')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.light.state ? 'bg-[#22D3EE]/10 border border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+              <button onClick={() => handleToggleActuator('light')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.light.state ? 'bg-[#22D3EE]/10 border border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
                 <Lightbulb className={`w-7 h-7 mb-2 ${actuators.light.state ? 'text-[#22D3EE]' : ''}`} />
                 <span className="text-xs font-bold">Grow Lights</span>
                 <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.light.mode}: {actuators.light.state ? 'ON' : 'OFF'}</span>
               </button>
-
-              {/* Pump */}
-              <button onClick={() => handleToggleActuator('pump')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.pump.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+              <button onClick={() => handleToggleActuator('pump')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.pump.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
                 <Power className={`w-7 h-7 mb-2 ${actuators.pump.state ? 'text-cyan-400' : ''}`} />
                 <span className="text-xs font-bold">Water Pump</span>
                 <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.pump.mode}: {actuators.pump.state ? 'ON' : 'OFF'}</span>
@@ -581,78 +489,66 @@ const App = () => {
             <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-400">Max Temp (Fan On) °C</span>
-                <input type="number" value={thresholds.hotTemp} onChange={e => setThresholds({...thresholds, hotTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
+                <input type="number" value={thresholds.hotTemp} onChange={e => setThresholds({...thresholds, hotTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937]" />
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-400">Min Temp (Lights On) °C</span>
-                <input type="number" value={thresholds.coldTemp} onChange={e => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
+                <input type="number" value={thresholds.coldTemp} onChange={e => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937]" />
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-400">Min Moisture (Pump On) %</span>
-                <input type="number" value={thresholds.dryMoisture} onChange={e => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
+                <input type="number" value={thresholds.dryMoisture} onChange={e => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937]" />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Search & Full Telemetry CRUD / Database */}
+      {/* Manual Log & Database */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Manual Log Insertion Form */}
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937]">
           <h3 className="text-base font-semibold mb-4 text-gray-200 flex items-center gap-2"><Plus className="w-5 h-5 text-[#34D399]" /> Add Manual Log Entry</h3>
           <form onSubmit={handleAddLog} className="space-y-3">
             <div>
               <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Time Label</label>
-              <input type="text" value={newLogTime} onChange={e => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
+              <input type="text" value={newLogTime} onChange={e => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Temp (°C)</label>
-                <input type="number" step="0.1" value={newLogTemp} onChange={e => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
+                <input type="number" step="0.1" value={newLogTemp} onChange={e => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
               </div>
               <div>
                 <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Humidity (%)</label>
-                <input type="number" step="0.1" value={newLogHumidity} onChange={e => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
+                <input type="number" step="0.1" value={newLogHumidity} onChange={e => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Moisture (%)</label>
-                <input type="number" step="0.1" value={newLogMoisture} onChange={e => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
+                <input type="number" step="0.1" value={newLogMoisture} onChange={e => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
               </div>
               <div>
                 <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Water (%)</label>
-                <input type="number" step="0.1" value={newLogWater} onChange={e => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
+                <input type="number" step="0.1" value={newLogWater} onChange={e => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
               </div>
             </div>
-            <button type="submit" className="w-full bg-[#34D399] hover:bg-[#10B981] text-[#0B0F19] font-bold py-3 rounded-xl text-xs transition mt-2 shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#183a2b]">Save to Database</button>
+            <button type="submit" className="w-full bg-[#34D399] hover:bg-[#10B981] text-[#0B0F19] font-bold py-3 rounded-xl text-xs transition mt-2">Save to Database</button>
           </form>
         </div>
 
-        {/* Database Search & Table */}
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] lg:col-span-2">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] lg:col-span-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
             <h3 className="text-base font-semibold text-gray-200">Telemetry Log Database</h3>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-              <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search records..." className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs pl-9 pr-4 py-2 rounded-xl text-white focus:outline-none focus:border-[#22D3EE] shadow-[inset_2px_2px_4px_#05070c]" />
+              <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search records..." className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs pl-9 pr-4 py-2 rounded-xl text-white" />
             </div>
           </div>
-
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-xs text-gray-300">
               <thead className="bg-[#0B0F19] text-gray-400 uppercase text-[10px] sticky top-0">
-                <tr>
-                  <th className="p-3">Time</th>
-                  <th className="p-3">Temp</th>
-                  <th className="p-3">Humidity</th>
-                  <th className="p-3">Moisture</th>
-                  <th className="p-3">Water</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right">Action</th>
-                </tr>
+                <tr><th className="p-3">Time</th><th className="p-3">Temp</th><th className="p-3">Humidity</th><th className="p-3">Moisture</th><th className="p-3">Water</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-[#1F2937]">
                 {filteredHistory.length > 0 ? (
@@ -670,15 +566,12 @@ const App = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan="7" className="p-4 text-center text-gray-500">No matching records found.</td>
-                  </tr>
+                  <tr><td colSpan="7" className="p-4 text-center text-gray-500">No matching records found.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
-
       </div>
 
     </div>
