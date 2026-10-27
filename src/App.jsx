@@ -14,8 +14,9 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- PWA INSTALL PROMPT STATE ---
+  // --- PWA INSTALL STATE ---
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   // --- ESP32 WIFI MODAL STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
@@ -70,26 +71,40 @@ const App = () => {
     localStorage.setItem('pekinensis_currUser', currentUser);
     localStorage.setItem('pekinensis_activeSsid', activeSsid);
 
+    // Check if app is already running in standalone installed mode
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsInstalled(true);
+    }
+
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setInstallPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
+  // Directly trigger native installation browser popup
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
       const { outcome } = await installPrompt.userChoice;
       if (outcome === 'accepted') {
+        setIsInstalled(true);
         setInstallPrompt(null);
       }
     } else {
-      alert("To install Pekinensis, click the install icon (➕ or computer monitor) in your browser's address bar, or check your browser menu (⋮) and select 'Install Pekinensis'.");
+      alert("To install Pekinensis, click the install icon in your browser's address bar, or open your browser menu (⋮) and select 'Install Pekinensis Hydroponic Hub'.");
     }
   };
 
@@ -339,9 +354,15 @@ const App = () => {
           <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition shadow-md">
-            <Download className="w-4 h-4" /> Install App
-          </button>
+          {!isInstalled ? (
+            <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition shadow-md">
+              <Download className="w-4 h-4" /> Install App
+            </button>
+          ) : (
+            <div className="bg-[#10B981]/10 border border-[#34D399]/40 px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399]">
+              <CheckCircle className="w-4 h-4" /> App Installed
+            </div>
+          )}
           <button onClick={() => setWifiModalOpen(true)} className="px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] text-[#34D399]">
             <Wifi className="w-4 h-4" /> {activeSsid}
           </button>
