@@ -14,19 +14,14 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- ESP32 WIFI MODAL STATE ---
+  // --- ESP32 WIFI MODAL STATE (CLEARED PLACEHOLDERS) ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [scanningWifi, setScanningWifi] = useState(false);
-  const [availableNetworks, setAvailableNetworks] = useState([
-    { ssid: 'ZTE_2.4G_TbsRs6', rssi: -58, secure: true },
-    { ssid: 'Delinia Fam 2.4G', rssi: -67, secure: true },
-    { ssid: 'STEPHANIE 4G', rssi: -72, secure: true },
-    { ssid: 'RayosoFam.', rssi: -81, secure: true }
-  ]);
+  const [availableNetworks, setAvailableNetworks] = useState([]); // Starts empty on standby
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
   const [espIpAddress, setEspIpAddress] = useState('192.168.100.220');
-  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Delinia Fam 2.4G');
+  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Not Connected');
   const [connectingStatus, setConnectingStatus] = useState(false);
   const [customSsidModal, setCustomSsidModal] = useState(false);
   const [customSsid, setCustomSsid] = useState('');
@@ -103,7 +98,7 @@ const App = () => {
     });
   };
 
-  // Fetch real networks from ESP32 API
+  // Fetch real networks from ESP32 API on standby
   const handleScanRealWifi = async () => {
     setScanningWifi(true);
     try {
@@ -111,9 +106,12 @@ const App = () => {
       if (res.ok) {
         const data = await res.json();
         setAvailableNetworks(data);
+      } else {
+        setAvailableNetworks([]);
       }
     } catch (err) {
-      console.log('Using simulated/cached wireless list.');
+      console.log('ESP32 not connected or offline.');
+      setAvailableNetworks([]);
     } finally {
       setScanningWifi(false);
     }
@@ -189,7 +187,6 @@ const App = () => {
     String(item.temp).includes(searchQuery)
   );
 
-  // --- TRUE VALID DOCX GENERATOR USING docx LIBRARY ---
   const handleDownloadDocx = async () => {
     try {
       const tableRows = [
@@ -342,35 +339,48 @@ const App = () => {
             </div>
             <p className="text-xs text-gray-400 mb-3">Pick the network the ESP32 should use. No re-flashing needed.</p>
 
-            <div className="bg-[#0B0F19] border border-[#1F2937] p-3 rounded-2xl mb-4 text-[11px] text-[#34D399]">
-              ESP32 is online on {activeSsid} ({espIpAddress}, -67 dBm)
+            <div className="mb-3">
+              <label className="text-[10px] text-gray-400 uppercase block mb-1">ESP32 Device IP Address</label>
+              <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-1.5 text-xs text-white" />
             </div>
 
+            {/* Scanned Networks List (Empty on Standby until scanned from ESP32) */}
             <div className="space-y-2 mb-4 max-h-52 overflow-y-auto pr-1">
-              {availableNetworks.map((net, idx) => {
-                const isConnected = net.ssid === activeSsid;
-                const isSelected = selectedNetwork?.ssid === net.ssid;
-                return (
-                  <div 
-                    key={idx} 
-                    onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} 
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition flex justify-between items-center ${isSelected ? 'bg-[#1e293b] border-[#34D399] text-white' : 'bg-[#161e31] border-[#1F2937] text-gray-200 hover:bg-[#1a2338]'}`}
-                  >
-                    <div>
-                      <p className="text-xs font-bold">{net.ssid}</p>
-                      {isConnected ? (
-                        <p className="text-[10px] text-[#34D399] font-semibold mt-0.5">CONNECTED</p>
-                      ) : (
-                        <p className="text-[10px] text-gray-500 mt-0.5">Secured (WPA2)</p>
-                      )}
+              {scanningWifi ? (
+                <div className="text-center py-6 text-gray-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#22D3EE]" />
+                  Scanning nearby networks from ESP32...
+                </div>
+              ) : availableNetworks.length > 0 ? (
+                availableNetworks.map((net, idx) => {
+                  const isConnected = net.ssid === activeSsid;
+                  const isSelected = selectedNetwork?.ssid === net.ssid;
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} 
+                      className={`p-3.5 rounded-2xl border cursor-pointer transition flex justify-between items-center ${isSelected ? 'bg-[#1e293b] border-[#34D399] text-white' : 'bg-[#161e31] border-[#1F2937] text-gray-200 hover:bg-[#1a2338]'}`}
+                    >
+                      <div>
+                        <p className="text-xs font-bold">{net.ssid}</p>
+                        {isConnected ? (
+                          <p className="text-[10px] text-[#34D399] font-semibold mt-0.5">CONNECTED</p>
+                        ) : (
+                          <p className="text-[10px] text-gray-500 mt-0.5">RSSI: {net.rssi} dBm • {net.secure ? 'Secured' : 'Open'}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {net.secure && <Lock className="w-3.5 h-3.5 text-gray-400" />}
+                        <Wifi className="w-4 h-4 text-[#34D399]" />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {net.secure && <Lock className="w-3.5 h-3.5 text-gray-400" />}
-                      <Wifi className="w-4 h-4 text-[#34D399]" />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-gray-500 text-xs bg-[#0B0F19] rounded-2xl border border-[#1F2937]">
+                  No networks loaded. Click 'Rescan' to fetch from ESP32 hardware.
+                </div>
+              )}
             </div>
 
             {selectedNetwork && selectedNetwork.ssid !== activeSsid && (
