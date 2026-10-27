@@ -1,27 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, Printer, Calendar, UserPlus, LogIn } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, WifiOff, Settings } from 'lucide-react';
 
 const App = () => {
-  // --- PERSISTENT AUTHENTICATION & USERS STATE ---
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem('techPechay_users');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem('techPechay_logged') === 'true';
-  });
-  const [currentUser, setCurrentUser] = useState(() => {
-    return localStorage.getItem('techPechay_currUser') || '';
-  });
-  
+  // --- PERSISTENT AUTHENTICATION STATE ---
+  const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem('techPechay_users') || '[]'));
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('techPechay_logged') === 'true');
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('techPechay_currUser') || '');
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- PERSISTENT SENSORS & HISTORY STATE ---
+  // --- ESP32 & WIFI CONFIGURATION STATE ---
+  const [wifiModalOpen, setWifiModalOpen] = useState(false);
+  const [wifiSsid, setWifiSsid] = useState(() => localStorage.getItem('techPechay_wifiSsid') || 'TechPechay_Greenhouse_AP');
+  const [wifiPassword, setWifiPassword] = useState(() => localStorage.getItem('techPechay_wifiPass') || '');
+  const [espConnected, setEspConnected] = useState(true);
+
+  // --- SENSORS & TELEMETRY ---
   const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem('techPechay_history');
@@ -32,28 +30,32 @@ const App = () => {
     ];
   });
   
-  // --- PERSISTENT THRESHOLDS STATE ---
+  // --- THRESHOLDS ---
   const [thresholds, setThresholds] = useState(() => {
     const saved = localStorage.getItem('techPechay_thresholds');
     return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
-  const [actuators, setActuators] = useState({ fan: false, light: false, pump: false });
+  // --- ACTUATORS WITH MANUAL OVERRIDE SUPPORT ---
+  // mode: 'auto' or 'manual'
+  const [actuators, setActuators] = useState({
+    fan: { state: false, mode: 'auto' },
+    light: { state: false, mode: 'auto' },
+    pump: { state: false, mode: 'auto' }
+  });
 
   // --- MODULE STATES ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [plantingDate, setPlantingDate] = useState(() => {
-    return localStorage.getItem('techPechay_plantingDate') || '2026-03-01';
-  });
+  const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('techPechay_plantingDate') || '2026-03-01');
 
-  // Manual Log Form State (All telemetry fields)
+  // Manual Log Form State
   const [newLogTime, setNewLogTime] = useState('');
   const [newLogTemp, setNewLogTemp] = useState('');
   const [newLogHumidity, setNewLogHumidity] = useState('');
   const [newLogMoisture, setNewLogMoisture] = useState('');
   const [newLogWater, setNewLogWater] = useState('');
 
-  // Save state to localStorage whenever it changes
+  // Save state to localStorage
   useEffect(() => {
     localStorage.setItem('techPechay_users', JSON.stringify(users));
     localStorage.setItem('techPechay_history', JSON.stringify(history));
@@ -61,9 +63,11 @@ const App = () => {
     localStorage.setItem('techPechay_plantingDate', plantingDate);
     localStorage.setItem('techPechay_logged', isLoggedIn);
     localStorage.setItem('techPechay_currUser', currentUser);
-  }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser]);
+    localStorage.setItem('techPechay_wifiSsid', wifiSsid);
+    localStorage.setItem('techPechay_wifiPass', wifiPassword);
+  }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, wifiSsid, wifiPassword]);
 
-  // Live Simulation effect
+  // Live Simulation effect & Automatic vs Manual Actuator handling
   useEffect(() => {
     if (!isLoggedIn) return;
     const interval = setInterval(() => {
@@ -79,69 +83,71 @@ const App = () => {
         waterLevel: newWater
       });
 
-      setActuators({
-        fan: newTemp > thresholds.hotTemp,
-        light: newTemp < thresholds.coldTemp,
-        pump: newMoisture < thresholds.dryMoisture
-      });
+      setActuators(prev => ({
+        fan: {
+          state: prev.fan.mode === 'auto' ? newTemp > thresholds.hotTemp : prev.fan.state,
+          mode: prev.fan.mode
+        },
+        light: {
+          state: prev.light.mode === 'auto' ? newTemp < thresholds.coldTemp : prev.light.state,
+          mode: prev.light.mode
+        },
+        pump: {
+          state: prev.pump.mode === 'auto' ? newMoisture < thresholds.dryMoisture : prev.pump.state,
+          mode: prev.pump.mode
+        }
+      }));
     }, 4000);
 
     return () => clearInterval(interval);
   }, [isLoggedIn, thresholds]);
 
+  // Toggle Actuator Manual/Auto or State
+  const handleToggleActuator = (key) => {
+    setActuators(prev => {
+      const current = prev[key];
+      if (current.mode === 'auto') {
+        return { ...prev, [key]: { state: true, mode: 'manual' } };
+      } else if (current.state === true) {
+        return { ...prev, [key]: { state: false, mode: 'manual' } };
+      } else {
+        return { ...prev, [key]: { state: false, mode: 'auto' } }; // return to auto
+      }
+    });
+  };
+
   // --- AUTHENTICATION HANDLERS ---
   const handleRegister = (e) => {
     e.preventDefault();
-    setAuthError('');
-    setAuthSuccess('');
-
-    if (!username || !password) {
-      setAuthError('Please fill in all fields.');
-      return;
-    }
-
-    const existingUser = users.find(u => u.username === username);
-    if (existingUser) {
-      setAuthError('Username already exists. Please choose another.');
-      return;
-    }
-
-    const updatedUsers = [...users, { username, password }];
-    setUsers(updatedUsers);
+    setAuthError(''); setAuthSuccess('');
+    if (!username || !password) { setAuthError('Please fill in all fields.'); return; }
+    if (users.some(u => u.username === username)) { setAuthError('Username already exists.'); return; }
+    setUsers([...users, { username, password }]);
     setAuthSuccess('Account created successfully! You can now log in.');
-    setIsRegistering(false);
-    setUsername('');
-    setPassword('');
+    setIsRegistering(false); setUsername(''); setPassword('');
   };
 
   const handleLogin = (e) => {
     e.preventDefault();
-    setAuthError('');
-    setAuthSuccess('');
-
-    const foundUser = users.find(u => u.username === username && u.password === password);
-    if (foundUser) {
-      setIsLoggedIn(true);
-      setCurrentUser(username);
-      setUsername('');
-      setPassword('');
+    setAuthError(''); setAuthSuccess('');
+    const found = users.find(u => u.username === username && u.password === password);
+    if (found) {
+      setIsLoggedIn(true); setCurrentUser(username); setUsername(''); setPassword('');
     } else {
       setAuthError('Invalid username or password.');
     }
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentUser('');
+    setIsLoggedIn(false); setCurrentUser('');
     localStorage.setItem('techPechay_logged', 'false');
     localStorage.removeItem('techPechay_currUser');
   };
 
-  // --- DATA MANIPULATION MODULE (CRUD) ---
+  // --- DATA MANIPULATION (CRUD) ---
   const handleAddLog = (e) => {
     e.preventDefault();
     if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture || !newLogWater) return;
-    
     const newItem = {
       id: Date.now(),
       time: newLogTime,
@@ -152,94 +158,156 @@ const App = () => {
       status: 'Manual Entry'
     };
     setHistory([newItem, ...history]);
-    setNewLogTime('');
-    setNewLogTemp('');
-    setNewLogHumidity('');
-    setNewLogMoisture('');
-    setNewLogWater('');
+    setNewLogTime(''); setNewLogTemp(''); setNewLogHumidity(''); setNewLogMoisture(''); setNewLogWater('');
   };
 
-  const handleDeleteLog = (id) => {
-    setHistory(history.filter(item => item.id !== id));
-  };
+  const handleDeleteLog = (id) => setHistory(history.filter(item => item.id !== id));
 
   // --- HARVEST TIME APPROXIMATION ---
   const calculateHarvestProgress = () => {
     const planted = new Date(plantingDate);
     const today = new Date();
-    const diffTime = Math.abs(today - planted);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil(Math.abs(today - planted) / (1000 * 60 * 60 * 24));
     const maturityDays = 32; // Tech Pechay cycle
     const progress = Math.min(Math.floor((diffDays / maturityDays) * 100), 100);
-    
-    const estimatedHarvestDate = new Date(planted);
-    estimatedHarvestDate.setDate(estimatedHarvestDate.getDate() + maturityDays);
-
-    return {
-      daysElapsed: diffDays,
-      progress: progress,
-      targetDate: estimatedHarvestDate.toDateString()
-    };
+    const target = new Date(planted);
+    target.setDate(target.getDate() + maturityDays);
+    return { daysElapsed: diffDays, progress, targetDate: target.toDateString() };
   };
-
   const harvestInfo = calculateHarvestProgress();
 
-  // Search Module Filter
+  // Filter history for search
   const filteredHistory = history.filter(item => 
     item.time.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
     String(item.temp).includes(searchQuery)
   );
 
-  // --- LOGIN & REGISTRATION VIEW ---
+  // --- AUTOMATIC TABULAR DOCX EXPORT ---
+  const handleDownloadDocx = () => {
+    let htmlContent = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><title>Tech Pechay Greenhouse Report</title>
+      <style>
+        body { font-family: 'Arial', sans-serif; color: #333; line-height: 1.6; padding: 20px; }
+        h1 { color: #047857; text-align: center; }
+        h3 { color: #065F46; border-bottom: 2px solid #10B981; padding-bottom: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #CBD5E1; padding: 10px; text-align: center; font-size: 12pt; }
+        th { background-color: #065F46; color: #FFFFFF; }
+        tr:nth-child(even) { background-color: #F8FAFC; }
+        .meta { background: #ECFDF5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #10B981; }
+      </style>
+      </head>
+      <body>
+        <h1>🌱 Tech Pechay Hydroponic Greenhouse Report</h1>
+        <div class="meta">
+          <p><strong>Generated By:</strong> ${currentUser || 'Admin'}</p>
+          <p><strong>Date Generated:</strong> ${new Date().toLocaleString()}</p>
+          <p><strong>Planting Date:</strong> ${plantingDate} (${harvestInfo.daysElapsed} Days Elapsed - ${harvestInfo.progress}% Maturity)</p>
+          <p><strong>Estimated Harvest Date:</strong> ${harvestInfo.targetDate}</p>
+        </div>
+
+        <h3>Current Sensor Telemetry</h3>
+        <ul>
+          <li>Temperature: ${sensors.temp} °C</li>
+          <li>Humidity: ${sensors.humidity} %</li>
+          <li>Substrate Moisture: ${sensors.moisture} %</li>
+          <li>Water Reservoir Level: ${sensors.waterLevel} %</li>
+        </ul>
+
+        <h3>Historical Telemetry Database</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Temp (°C)</th>
+              <th>Humidity (%)</th>
+              <th>Moisture (%)</th>
+              <th>Water (%)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    history.forEach(item => {
+      htmlContent += `
+        <tr>
+          <td>${item.time}</td>
+          <td>${item.temp}</td>
+          <td>${item.humidity ?? '-'}</td>
+          <td>${item.moisture}</td>
+          <td>${item.waterLevel ?? '-'}</td>
+          <td>${item.status}</td>
+        </tr>
+      `;
+    });
+
+    htmlContent += `
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Tech_Pechay_Greenhouse_Report_${new Date().toISOString().slice(0, 10)}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // --- AUTH SCREEN ---
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+      <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
+        <div className="bg-[#111827] border border-[#1F2937] p-8 rounded-3xl shadow-[8px_8px_20px_#05070c,-8px_-8px_20px_#1d283c] w-full max-w-md">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-green-400">🌱 Tech Pechay Hub</h1>
-            <p className="text-gray-400 text-sm mt-1">
-              {isRegistering ? 'Create Greenhouse Account' : 'Greenhouse Authentication Portal'}
-            </p>
+            <h1 className="text-2xl font-bold text-[#34D399] drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">🌱 Tech Pechay Hub</h1>
+            <p className="text-gray-400 text-sm mt-1">{isRegistering ? 'Create New Account' : 'Secure Login Portal'}</p>
           </div>
-
-          {authError && <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg text-sm mb-4">{authError}</div>}
-          {authSuccess && <div className="bg-green-500/10 border border-green-500 text-green-400 p-3 rounded-lg text-sm mb-4">{authSuccess}</div>}
+          {authError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-sm mb-4">{authError}</div>}
+          {authSuccess && <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl text-sm mb-4">{authSuccess}</div>}
 
           {!isRegistering ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="text-gray-300 text-sm block mb-1">Username</label>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter username" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">Username</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
               </div>
               <div>
-                <label className="text-gray-300 text-sm block mb-1">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
               </div>
-              <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center gap-2">
-                <LogIn className="w-4 h-4" /> Secure Login
+              <button type="submit" className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-3.5 rounded-xl transition shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#1b2e23] flex items-center justify-center gap-2">
+                <LogIn className="w-4 h-4" /> Sign In
               </button>
               <div className="text-center mt-4">
-                <button type="button" onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} className="text-sm text-green-400 hover:underline">
-                  Don't have an account? Sign up here
+                <button type="button" onClick={() => { setIsRegistering(true); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-[#22D3EE] hover:underline">
+                  Don't have an account? Sign up
                 </button>
               </div>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
-                <label className="text-gray-300 text-sm block mb-1">Choose Username</label>
-                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Choose username" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">New Username</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Choose username" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
               </div>
               <div>
-                <label className="text-gray-300 text-sm block mb-1">Choose Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Choose password" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-green-400" required />
+                <label className="text-gray-300 text-xs uppercase font-semibold tracking-wider block mb-1">New Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Choose password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#34D399] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#111827]" required />
               </div>
-              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-gray-950 font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center gap-2">
-                <UserPlus className="w-4 h-4" /> Register Account
+              <button type="submit" className="w-full bg-[#06B6D4] hover:bg-[#0891B2] text-[#0B0F19] font-bold py-3.5 rounded-xl transition shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#0f2933] flex items-center justify-center gap-2">
+                <UserPlus className="w-4 h-4" /> Create Account
               </button>
               <div className="text-center mt-4">
-                <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} className="text-sm text-gray-400 hover:underline">
+                <button type="button" onClick={() => { setIsRegistering(false); setAuthError(''); setAuthSuccess(''); }} className="text-xs text-gray-400 hover:underline">
                   Already have an account? Log in
                 </button>
               </div>
@@ -250,190 +318,252 @@ const App = () => {
     );
   }
 
-  // --- MAIN DASHBOARD VIEW ---
+  // --- MAIN NEUMORPHIC DASHBOARD ---
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans">
-      {/* Header & Print Module */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-gray-800 pb-4">
+    <div className="min-h-screen bg-[#0B0F19] text-gray-100 p-4 md:p-8 font-sans">
+      
+      {/* Top Header */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
         <div>
-          <h1 className="text-3xl font-bold text-green-400 flex items-center gap-2">🌱 Tech Pechay Hydroponic System</h1>
-          <p className="text-gray-400">Smart Greenhouse Monitoring & Management Console • Logged in as <strong className="text-green-300">{currentUser}</strong></p>
+          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2 drop-shadow-[0_0_12px_rgba(52,211,153,0.3)]">
+            🌱 Tech Pechay Hydroponic System
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong>
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => window.print()} className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition">
-            <Printer className="w-4 h-4 text-green-400" /> Print Report
+
+        <div className="flex flex-wrap gap-3 items-center">
+          {/* Wi-Fi Status / Connect Button */}
+          <button onClick={() => setWifiModalOpen(true)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335] ${espConnected ? 'text-[#34D399]' : 'text-amber-400'}`}>
+            <Wifi className="w-4 h-4" /> {wifiSsid} ({espConnected ? 'Connected' : 'Config'})
           </button>
-          <button onClick={handleLogout} className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm font-medium transition">
+
+          <button onClick={handleDownloadDocx} className="bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#22D3EE] transition shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335]">
+            <FileText className="w-4 h-4" /> Export Tabular .DOCX
+          </button>
+
+          <button onClick={handleLogout} className="bg-[#0B0F19] hover:bg-[#201317] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold transition shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335]">
             Logout
           </button>
         </div>
       </header>
 
+      {/* Wi-Fi Modal */}
+      {wifiModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md shadow-[8px_8px_20px_#05070c]">
+            <h3 className="text-lg font-bold text-[#22D3EE] mb-2 flex items-center gap-2"><Wifi className="w-5 h-5"/> ESP32 Wi-Fi Configuration</h3>
+            <p className="text-xs text-gray-400 mb-4">Connect your ESP32 microcontroller to your greenhouse local network SSID.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-300 uppercase font-semibold block mb-1">Network SSID</label>
+                <input type="text" value={wifiSsid} onChange={e => setWifiSsid(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-[#22D3EE]" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-300 uppercase font-semibold block mb-1">Wi-Fi Password</label>
+                <input type="password" value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} placeholder="Enter password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-[#22D3EE]" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setEspConnected(true); setWifiModalOpen(false); }} className="flex-1 bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-sm transition">Save & Connect</button>
+                <button onClick={() => setWifiModalOpen(false)} className="flex-1 bg-gray-800 text-gray-300 font-bold py-2.5 rounded-xl text-sm transition">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Harvest Time Approximation Module */}
-      <div className="bg-gradient-to-r from-gray-800 to-gray-850 p-6 rounded-2xl border border-gray-700 shadow-xl mb-8">
+      <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] mb-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-green-300 flex items-center gap-2">
-              <Calendar className="w-5 h-5" /> Harvest Time Approximation (Batch Maturity)
+            <h2 className="text-base font-semibold text-[#34D399] flex items-center gap-2">
+              <Calendar className="w-5 h-5" /> Harvest Time Approximation (Chinese Cabbage / Tech Pechay)
             </h2>
-            <p className="text-sm text-gray-400">Estimated Maturity Window: 30–35 days for optimal Tech Pechay harvest.</p>
+            <p className="text-xs text-gray-400">Optimal Maturity Window: 30–35 days in hydroponic system.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-[#0B0F19] px-3 py-1.5 rounded-xl border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]">
             <label className="text-xs text-gray-400">Planting Date:</label>
-            <input type="date" value={plantingDate} onChange={(e) => setPlantingDate(e.target.value)} className="bg-gray-900 border border-gray-700 text-sm px-3 py-1.5 rounded-lg text-white" />
+            <input type="date" value={plantingDate} onChange={e => setPlantingDate(e.target.value)} className="bg-transparent text-xs text-white focus:outline-none" />
           </div>
         </div>
         
         <div className="space-y-2">
-          <div className="flex justify-between text-sm">
+          <div className="flex justify-between text-xs md:text-sm">
             <span className="text-gray-300">Days Elapsed: <strong className="text-white">{harvestInfo.daysElapsed} Days</strong></span>
-            <span className="text-gray-300">Estimated Target Date: <strong className="text-green-400">{harvestInfo.targetDate}</strong></span>
-            <span className="text-green-400 font-bold">{harvestInfo.progress}% Complete</span>
+            <span className="text-gray-300">Target Harvest Date: <strong className="text-[#34D399]">{harvestInfo.targetDate}</strong></span>
+            <span className="text-[#22D3EE] font-bold">{harvestInfo.progress}% Complete</span>
           </div>
-          <div className="w-full bg-gray-900 rounded-full h-3 border border-gray-700 overflow-hidden">
-            <div className="bg-gradient-to-r from-green-500 to-emerald-400 h-full transition-all duration-500" style={{ width: `${harvestInfo.progress}%` }}></div>
+          <div className="w-full bg-[#0B0F19] rounded-full h-3 border border-[#1F2937] overflow-hidden shadow-[inset_2px_2px_5px_#05070c]">
+            <div className="bg-gradient-to-r from-[#06B6D4] to-[#10B981] h-full transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" style={{ width: `${harvestInfo.progress}%` }}></div>
           </div>
         </div>
       </div>
 
-      {/* Sensor Cards */}
+      {/* Sensor Cards with Neumorphic Depth */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-400 mb-1">Temperature</p>
-            <p className="text-3xl font-bold">{sensors.temp}°C</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Temperature</p>
+            <p className="text-3xl font-bold text-white">{sensors.temp}<span className="text-lg text-orange-400">°C</span></p>
           </div>
-          <Thermometer className="text-orange-400 w-10 h-10" />
+          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
+            <Thermometer className="text-orange-400 w-7 h-7" />
+          </div>
         </div>
         
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-400 mb-1">Humidity</p>
-            <p className="text-3xl font-bold">{sensors.humidity}%</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Humidity</p>
+            <p className="text-3xl font-bold text-white">{sensors.humidity}<span className="text-lg text-[#22D3EE]">%</span></p>
           </div>
-          <CloudRain className="text-blue-400 w-10 h-10" />
+          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
+            <CloudRain className="text-[#22D3EE] w-7 h-7" />
+          </div>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-400 mb-1">Substrate Moisture</p>
-            <p className="text-3xl font-bold">{sensors.moisture}%</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Substrate Moisture</p>
+            <p className="text-3xl font-bold text-white">{sensors.moisture}<span className="text-lg text-[#34D399]">%</span></p>
           </div>
-          <Droplets className="text-teal-400 w-10 h-10" />
+          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
+            <Droplets className="text-[#34D399] w-7 h-7" />
+          </div>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex items-center justify-between">
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-400 mb-1">Water Reservoir</p>
-            <p className="text-3xl font-bold">{sensors.waterLevel}%</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Water Reservoir</p>
+            <p className="text-3xl font-bold text-white">{sensors.waterLevel}<span className="text-lg text-cyan-400">%</span></p>
           </div>
-          <Waves className="text-cyan-400 w-10 h-10" />
+          <div className="p-3.5 rounded-2xl bg-[#0B0F19] shadow-[inset_3px_3px_6px_#05070c,inset_-3px_-3px_6px_#192335]">
+            <Waves className="text-cyan-400 w-7 h-7" />
+          </div>
         </div>
       </div>
 
-      {/* Main Grid: Telemetry & Actuators */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg">
-          <h2 className="text-xl font-semibold mb-4">Live Telemetry History</h2>
+      {/* Main Grid: Telemetry & Actuator Controls (Manual + Auto) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        
+        {/* Telemetry Graph */}
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
+          <h2 className="text-lg font-semibold mb-4 text-gray-200">Live Telemetry History</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={history}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="time" stroke="#9CA3AF" fontSize={12} />
-                <YAxis stroke="#9CA3AF" fontSize={12} />
-                <Tooltip contentStyle={{ backgroundColor: '#1F2937', border: 'none' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
+                <XAxis dataKey="time" stroke="#9CA3AF" fontSize={11} />
+                <YAxis stroke="#9CA3AF" fontSize={11} />
+                <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #1F2937', borderRadius: '12px' }} />
                 <Line type="monotone" dataKey="temp" stroke="#F97316" strokeWidth={2} name="Temp (°C)" />
-                <Line type="monotone" dataKey="moisture" stroke="#14B8A6" strokeWidth={2} name="Moisture (%)" />
-                <Line type="monotone" dataKey="waterLevel" stroke="#06B6D4" strokeWidth={2} name="Water Level (%)" />
+                <Line type="monotone" dataKey="moisture" stroke="#34D399" strokeWidth={2} name="Moisture (%)" />
+                <Line type="monotone" dataKey="waterLevel" stroke="#22D3EE" strokeWidth={2} name="Water (%)" />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg flex flex-col justify-between gap-6">
+        {/* Actuator Status & Manual/Auto Override */}
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] flex flex-col justify-between gap-6">
           <div>
-            <h2 className="text-xl font-semibold mb-4">Actuator Status</h2>
-            <div className="flex gap-4">
-              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.fan ? 'bg-orange-500/20 text-orange-400 border border-orange-500/50' : 'bg-gray-900 text-gray-500'}`}>
-                <Fan className={`w-7 h-7 mb-1 ${actuators.fan ? 'animate-spin' : ''}`} />
-                <span className="text-xs font-medium">Exhaust Fan</span>
-              </div>
-              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.light ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50' : 'bg-gray-900 text-gray-500'}`}>
-                <Lightbulb className="w-7 h-7 mb-1" />
-                <span className="text-xs font-medium">Grow Lights</span>
-              </div>
-              <div className={`flex flex-col items-center p-3 rounded-xl flex-1 ${actuators.pump ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50' : 'bg-gray-900 text-gray-500'}`}>
-                <Power className="w-7 h-7 mb-1" />
-                <span className="text-xs font-medium">Water Pump</span>
-              </div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-gray-200">Actuators & Manual Override</h2>
+              <span className="text-xs text-gray-400 bg-[#0B0F19] px-3 py-1 rounded-xl border border-[#1F2937]">Click card to override</span>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-3">
+              {/* Fan */}
+              <button onClick={() => handleToggleActuator('fan')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+                <Fan className={`w-7 h-7 mb-2 ${actuators.fan.state ? 'animate-spin text-[#34D399]' : ''}`} />
+                <span className="text-xs font-bold">Exhaust Fan</span>
+                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.fan.mode}: {actuators.fan.state ? 'ON' : 'OFF'}</span>
+              </button>
+
+              {/* Lights */}
+              <button onClick={() => handleToggleActuator('light')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.light.state ? 'bg-[#22D3EE]/10 border border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+                <Lightbulb className={`w-7 h-7 mb-2 ${actuators.light.state ? 'text-[#22D3EE]' : ''}`} />
+                <span className="text-xs font-bold">Grow Lights</span>
+                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.light.mode}: {actuators.light.state ? 'ON' : 'OFF'}</span>
+              </button>
+
+              {/* Pump */}
+              <button onClick={() => handleToggleActuator('pump')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.pump.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'} shadow-[4px_4px_10px_#05070c,-4px_-4px_10px_#151f30]`}>
+                <Power className={`w-7 h-7 mb-2 ${actuators.pump.state ? 'text-cyan-400' : ''}`} />
+                <span className="text-xs font-bold">Water Pump</span>
+                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.pump.mode}: {actuators.pump.state ? 'ON' : 'OFF'}</span>
+              </button>
             </div>
           </div>
 
           <div>
-            <h2 className="text-xl font-semibold mb-3">Automation Thresholds</h2>
+            <h3 className="text-sm font-semibold mb-3 text-gray-300">Automation Thresholds</h3>
             <div className="space-y-3">
-              <div className="flex justify-between items-center text-sm">
-                <label className="text-gray-300">Max Temp (Fan On) °C</label>
-                <input type="number" value={thresholds.hotTemp} onChange={(e) => setThresholds({...thresholds, hotTemp: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-gray-400">Max Temp (Fan On) °C</span>
+                <input type="number" value={thresholds.hotTemp} onChange={e => setThresholds({...thresholds, hotTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <label className="text-gray-300">Min Temp (Lights On) °C</label>
-                <input type="number" value={thresholds.coldTemp} onChange={(e) => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-gray-400">Min Temp (Lights On) °C</span>
+                <input type="number" value={thresholds.coldTemp} onChange={e => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <label className="text-gray-300">Min Moisture (Pump On) %</label>
-                <input type="number" value={thresholds.dryMoisture} onChange={(e) => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-gray-900 text-white px-3 py-1 rounded-lg w-20 text-center border border-gray-700" />
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-gray-400">Min Moisture (Pump On) %</span>
+                <input type="number" value={thresholds.dryMoisture} onChange={e => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937] shadow-[inset_2px_2px_4px_#05070c]" />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Search & Full Telemetry Data Manipulation Modules */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-green-400" /> Add Full Manual Log</h3>
+      {/* Search & Full Telemetry CRUD / Database */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Manual Log Insertion Form */}
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
+          <h3 className="text-base font-semibold mb-4 text-gray-200 flex items-center gap-2"><Plus className="w-5 h-5 text-[#34D399]" /> Add Manual Log Entry</h3>
           <form onSubmit={handleAddLog} className="space-y-3">
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Time Label</label>
-              <input type="text" value={newLogTime} onChange={(e) => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+              <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Time Label</label>
+              <input type="text" value={newLogTime} onChange={e => setNewLogTime(e.target.value)} placeholder="e.g. 10:30 AM" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Temp (°C)</label>
-                <input type="number" step="0.1" value={newLogTemp} onChange={(e) => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Temp (°C)</label>
+                <input type="number" step="0.1" value={newLogTemp} onChange={e => setNewLogTemp(e.target.value)} placeholder="25.4" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
               </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Humidity (%)</label>
-                <input type="number" step="0.1" value={newLogHumidity} onChange={(e) => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Humidity (%)</label>
+                <input type="number" step="0.1" value={newLogHumidity} onChange={e => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Moisture (%)</label>
-                <input type="number" step="0.1" value={newLogMoisture} onChange={(e) => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Moisture (%)</label>
+                <input type="number" step="0.1" value={newLogMoisture} onChange={e => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
               </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Water (%)</label>
-                <input type="number" step="0.1" value={newLogWater} onChange={(e) => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-gray-900 border border-gray-700 text-sm px-3 py-2 rounded-lg text-white" required />
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Water (%)</label>
+                <input type="number" step="0.1" value={newLogWater} onChange={e => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white shadow-[inset_2px_2px_4px_#05070c]" required />
               </div>
             </div>
-            <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-gray-950 font-semibold py-2 rounded-lg text-sm transition mt-2">Insert Full Record</button>
+            <button type="submit" className="w-full bg-[#34D399] hover:bg-[#10B981] text-[#0B0F19] font-bold py-3 rounded-xl text-xs transition mt-2 shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#183a2b]">Save to Database</button>
           </form>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-lg lg:col-span-2">
+        {/* Database Search & Table */}
+        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] lg:col-span-2">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-            <h3 className="text-lg font-semibold">Telemetry Log Database</h3>
+            <h3 className="text-base font-semibold text-gray-200">Telemetry Log Database</h3>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search logs..." className="w-full bg-gray-900 border border-gray-700 text-sm pl-9 pr-4 py-1.5 rounded-lg text-white focus:outline-none focus:border-green-400" />
+              <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search records..." className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs pl-9 pr-4 py-2 rounded-xl text-white focus:outline-none focus:border-[#22D3EE] shadow-[inset_2px_2px_4px_#05070c]" />
             </div>
           </div>
 
-          <div className="overflow-x-auto max-h-56 overflow-y-auto">
-            <table className="w-full text-left text-sm text-gray-300">
-              <thead className="bg-gray-900 text-gray-400 uppercase text-xs sticky top-0">
+          <div className="overflow-x-auto max-h-60 overflow-y-auto">
+            <table className="w-full text-left text-xs text-gray-300">
+              <thead className="bg-[#0B0F19] text-gray-400 uppercase text-[10px] sticky top-0">
                 <tr>
                   <th className="p-3">Time</th>
                   <th className="p-3">Temp</th>
@@ -444,16 +574,16 @@ const App = () => {
                   <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700">
+              <tbody className="divide-y divide-[#1F2937]">
                 {filteredHistory.length > 0 ? (
-                  filteredHistory.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-750">
+                  filteredHistory.map(item => (
+                    <tr key={item.id} className="hover:bg-[#161e31]">
                       <td className="p-3 font-medium text-white">{item.time}</td>
                       <td className="p-3">{item.temp}°C</td>
-                      <td className="p-3">{item.humidity}%</td>
+                      <td className="p-3">{item.humidity ?? '-'}%</td>
                       <td className="p-3">{item.moisture}%</td>
-                      <td className="p-3">{item.waterLevel}%</td>
-                      <td className="p-3"><span className="px-2 py-0.5 rounded text-xs bg-green-500/10 text-green-400 border border-green-500/20">{item.status}</span></td>
+                      <td className="p-3">{item.waterLevel ?? '-'}%</td>
+                      <td className="p-3"><span className="px-2 py-0.5 rounded-lg text-[10px] bg-[#34D399]/10 text-[#34D399] border border-[#34D399]/30">{item.status}</span></td>
                       <td className="p-3 text-right">
                         <button onClick={() => handleDeleteLog(item.id)} className="text-red-400 hover:text-red-300 p-1"><Trash2 className="w-4 h-4" /></button>
                       </td>
@@ -468,7 +598,9 @@ const App = () => {
             </table>
           </div>
         </div>
+
       </div>
+
     </div>
   );
 };
