@@ -81,6 +81,7 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
+  // Direct Installation Trigger Without Guide/Alerts
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -88,8 +89,6 @@ const App = () => {
       if (outcome === 'accepted') {
         setInstallPrompt(null);
       }
-    } else {
-      alert("App installation prompt is already active, or your browser is currently running the installed version of the app.");
     }
   };
 
