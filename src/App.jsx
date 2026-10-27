@@ -81,7 +81,7 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
-  // Direct Installation Trigger Without Guide/Alerts
+  // Guaranteed File-Download Trigger Fallback
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -89,6 +89,18 @@ const App = () => {
       if (outcome === 'accepted') {
         setInstallPrompt(null);
       }
+    } else {
+      // Instantly opens file download window just like docx export
+      const shortcutContent = `[InternetShortcut]\nURL=${window.location.origin}\n`;
+      const blob = new Blob([shortcutContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Pekinensis_Desktop_Shortcut.url';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
   };
 
