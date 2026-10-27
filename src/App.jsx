@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download, Smartphone, Monitor } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableCell, TableRow, WidthType, HeadingLevel } from 'docx';
 
 const App = () => {
   // --- PERSISTENT AUTHENTICATION STATE ---
-  const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem('techPechay_users') || '[]'));
-  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('techPechay_logged') === 'true');
-  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('techPechay_currUser') || '');
+  const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem('pekinensis_users') || '[]'));
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('pekinensis_logged') === 'true');
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('pekinensis_currUser') || '');
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- PWA INSTALL PROMPT & MODAL STATE ---
+  // --- PWA INSTALL PROMPT STATE ---
   const [installPrompt, setInstallPrompt] = useState(null);
-  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   // --- ESP32 WIFI MODAL STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
@@ -25,7 +24,7 @@ const App = () => {
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
   const [espIpAddress, setEspIpAddress] = useState('192.168.4.1');
-  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Not Connected');
+  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('pekinensis_activeSsid') || 'Not Connected');
   const [connectingStatus, setConnectingStatus] = useState(false);
   const [customSsidModal, setCustomSsidModal] = useState(false);
   const [customSsid, setCustomSsid] = useState('');
@@ -33,7 +32,7 @@ const App = () => {
   // --- SENSORS & TELEMETRY ---
   const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
   const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem('techPechay_history');
+    const saved = localStorage.getItem('pekinensis_history');
     return saved ? JSON.parse(saved) : [
       { id: 1, time: '10:00 AM', temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85, status: 'Optimal' },
       { id: 2, time: '10:03 AM', temp: 26.0, humidity: 58, moisture: 42, waterLevel: 84, status: 'Optimal' },
@@ -42,7 +41,7 @@ const App = () => {
   });
   
   const [thresholds, setThresholds] = useState(() => {
-    const saved = localStorage.getItem('techPechay_thresholds');
+    const saved = localStorage.getItem('pekinensis_thresholds');
     return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
@@ -53,7 +52,7 @@ const App = () => {
   });
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('techPechay_plantingDate') || '2026-03-01');
+  const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('pekinensis_plantingDate') || '2026-03-01');
 
   // Manual Log Form State
   const [newLogTime, setNewLogTime] = useState('');
@@ -63,13 +62,13 @@ const App = () => {
   const [newLogWater, setNewLogWater] = useState('');
 
   useEffect(() => {
-    localStorage.setItem('techPechay_users', JSON.stringify(users));
-    localStorage.setItem('techPechay_history', JSON.stringify(history));
-    localStorage.setItem('techPechay_thresholds', JSON.stringify(thresholds));
-    localStorage.setItem('techPechay_plantingDate', plantingDate);
-    localStorage.setItem('techPechay_logged', isLoggedIn);
-    localStorage.setItem('techPechay_currUser', currentUser);
-    localStorage.setItem('techPechay_activeSsid', activeSsid);
+    localStorage.setItem('pekinensis_users', JSON.stringify(users));
+    localStorage.setItem('pekinensis_history', JSON.stringify(history));
+    localStorage.setItem('pekinensis_thresholds', JSON.stringify(thresholds));
+    localStorage.setItem('pekinensis_plantingDate', plantingDate);
+    localStorage.setItem('pekinensis_logged', isLoggedIn);
+    localStorage.setItem('pekinensis_currUser', currentUser);
+    localStorage.setItem('pekinensis_activeSsid', activeSsid);
 
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
@@ -82,7 +81,6 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
-  // Always accessible install trigger
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -91,8 +89,7 @@ const App = () => {
         setInstallPrompt(null);
       }
     } else {
-      // Open manual guide modal for browsers that don't trigger automatic events
-      setInstallModalOpen(true);
+      alert("App installation prompt is already active, or your browser is currently running the installed version of the app.");
     }
   };
 
@@ -126,7 +123,6 @@ const App = () => {
     });
   };
 
-  // Fetch real networks from ESP32 API endpoint
   const handleScanRealWifi = async () => {
     setScanningWifi(true);
     try {
@@ -157,7 +153,6 @@ const App = () => {
     }, 1200);
   };
 
-  // --- AUTH & CRUD HANDLERS ---
   const handleRegister = (e) => {
     e.preventDefault();
     setAuthError(''); setAuthSuccess('');
@@ -178,8 +173,8 @@ const App = () => {
 
   const handleLogout = () => {
     setIsLoggedIn(false); setCurrentUser('');
-    localStorage.setItem('techPechay_logged', 'false');
-    localStorage.removeItem('techPechay_currUser');
+    localStorage.setItem('pekinensis_logged', 'false');
+    localStorage.removeItem('pekinensis_currUser');
   };
 
   const handleAddLog = (e) => {
@@ -196,7 +191,6 @@ const App = () => {
 
   const handleDeleteLog = (id) => setHistory(history.filter(item => item.id !== id));
 
-  // Harvest calculation for Tech Pechay (Chinese Cabbage - 30-35 days)
   const calculateHarvestProgress = () => {
     const planted = new Date(plantingDate);
     const today = new Date();
@@ -250,7 +244,7 @@ const App = () => {
           {
             properties: {},
             children: [
-              new Paragraph({ text: "🌱 Tech Pechay Hydroponic Greenhouse Report", heading: HeadingLevel.HEADING_1 }),
+              new Paragraph({ text: "🌱 Pekinensis Greenhouse Report", heading: HeadingLevel.HEADING_1 }),
               new Paragraph({ text: `Generated By: ${currentUser || 'Admin'}` }),
               new Paragraph({ text: `Date Generated: ${new Date().toLocaleString()}` }),
               new Paragraph({ text: `Planting Date: ${plantingDate} (${harvestInfo.daysElapsed} Days Elapsed - ${harvestInfo.progress}% Maturity)` }),
@@ -276,7 +270,7 @@ const App = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Tech_Pechay_Greenhouse_Report_${new Date().toISOString().slice(0, 10)}.docx`;
+      a.download = `Pekinensis_Greenhouse_Report_${new Date().toISOString().slice(0, 10)}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -292,7 +286,7 @@ const App = () => {
       <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center p-4">
         <div className="bg-[#111827] border border-[#1F2937] p-8 rounded-3xl shadow-[8px_8px_20px_#05070c,-8px_-8px_20px_#1d283c] w-full max-w-md">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-[#34D399]">🌱 Tech Pechay Hub</h1>
+            <h1 className="text-2xl font-bold text-[#34D399]">🌱 Pekinensis</h1>
             <p className="text-gray-400 text-sm mt-1">{isRegistering ? 'Create New Account' : 'Secure Login Portal'}</p>
           </div>
           {authError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-sm mb-4">{authError}</div>}
@@ -341,11 +335,10 @@ const App = () => {
     <div className="min-h-screen bg-[#0B0F19] text-gray-100 p-4 md:p-8 font-sans">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2">🌱 Tech Pechay Hydroponic System</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2">🌱 Pekinensis</h1>
           <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          {/* Always Visible Install Button */}
           <button onClick={handleInstallClick} className="bg-[#10B981]/20 hover:bg-[#10B981]/30 border border-[#34D399] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#34D399] transition shadow-md">
             <Download className="w-4 h-4" /> Install App
           </button>
@@ -358,41 +351,6 @@ const App = () => {
           <button onClick={handleLogout} className="bg-[#0B0F19] border border-[#1F2937] text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold">Logout</button>
         </div>
       </header>
-
-      {/* Install Guide Modal for Browsers without Auto-Prompt */}
-      {installModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md relative shadow-2xl">
-            <button onClick={() => setInstallModalOpen(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white"><X className="w-5 h-5"/></button>
-            <div className="flex items-center gap-2 mb-3">
-              <Download className="w-6 h-6 text-[#34D399]" />
-              <h3 className="text-lg font-bold text-white">How to Install Tech Pechay Hub</h3>
-            </div>
-            <p className="text-xs text-gray-300 mb-4">Depending on your browser or device, follow these quick steps to install this app:</p>
-            
-            <div className="space-y-3 text-xs text-gray-200 mb-6 bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937]">
-              <div>
-                <p className="font-bold text-[#34D399] flex items-center gap-1.5 mb-1"><Monitor className="w-4 h-4"/> Desktop (Chrome, Edge, Brave):</p>
-                <p className="text-gray-400">Click the install icon (<span className="text-white font-semibold">⊕</span> or computer icon) on the right side of your browser address bar.</p>
-              </div>
-              <hr className="border-[#1F2937]" />
-              <div>
-                <p className="font-bold text-[#22D3EE] flex items-center gap-1.5 mb-1"><Smartphone className="w-4 h-4"/> Mobile (Android Chrome):</p>
-                <p className="text-gray-400">Tap the three dots menu (⋮) at the top right and select <span className="text-white font-semibold">"Install app"</span> or <span className="text-white font-semibold">"Add to Home screen"</span>.</p>
-              </div>
-              <hr className="border-[#1F2937]" />
-              <div>
-                <p className="font-bold text-orange-400 flex items-center gap-1.5 mb-1"><Smartphone className="w-4 h-4"/> iOS (iPhone / Safari):</p>
-                <p className="text-gray-400">Tap the Share button at the bottom toolbar, scroll down, and tap <span className="text-white font-semibold">"Add to Home Screen"</span>.</p>
-              </div>
-            </div>
-
-            <button onClick={() => setInstallModalOpen(false)} className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Wi-Fi Modal */}
       {wifiModalOpen && (
@@ -491,7 +449,7 @@ const App = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
             <h2 className="text-base font-semibold text-[#34D399] flex items-center gap-2">
-              <Calendar className="w-5 h-5" /> Harvest Time Approximation (Chinese Cabbage / Tech Pechay)
+              <Calendar className="w-5 h-5" /> Harvest Time Approximation (Chinese Cabbage / Pekinensis)
             </h2>
             <p className="text-xs text-gray-400">Optimal Maturity Window: 30–35 days in hydroponic system.</p>
           </div>
