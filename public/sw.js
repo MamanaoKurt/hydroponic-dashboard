@@ -1,3 +1,12 @@
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener('fetch', (event) => {
-  // Required pass-through service worker for PWA installation criteria
+  // Pass-through fetch handler for PWA requirements
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
