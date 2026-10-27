@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, WifiOff, Settings } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle } from 'lucide-react';
 
 const App = () => {
   // --- PERSISTENT AUTHENTICATION STATE ---
@@ -13,11 +13,26 @@ const App = () => {
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // --- ESP32 & WIFI CONFIGURATION STATE ---
+  // --- MODERN WIFI SELECTOR STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
-  const [wifiSsid, setWifiSsid] = useState(() => localStorage.getItem('techPechay_wifiSsid') || 'TechPechay_Greenhouse_AP');
-  const [wifiPassword, setWifiPassword] = useState(() => localStorage.getItem('techPechay_wifiPass') || '');
+  const [scanningWifi, setScanningWifi] = useState(false);
+  const [availableNetworks, setAvailableNetworks] = useState([
+    { ssid: 'Greenhouse_Router_5G', rssi: -45, secure: true, channels: 'Ch 36' },
+    { ssid: 'TechPechay_Mesh_Ext', rssi: -62, secure: true, channels: 'Ch 11' },
+    { ssid: 'Smart_Bro_LTE_A2', rssi: -70, secure: true, channels: 'Ch 6' },
+    { ssid: 'Greenhouse_Guest_WiFi', rssi: -80, secure: false, channels: 'Ch 1' }
+  ]);
+  const [selectedNetwork, setSelectedNetwork] = useState(null);
+  const [wifiPassword, setWifiPassword] = useState('');
   const [espConnected, setEspConnected] = useState(true);
+  const [connectingStatus, setConnectingStatus] = useState(false);
+
+  // Auto-scan networks when opening Wi-Fi modal (just like a phone/PC)
+  useEffect(() => {
+    if (wifiModalOpen) {
+      handleScanWifi();
+    }
+  }, [wifiModalOpen]);
 
   // --- SENSORS & TELEMETRY ---
   const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
@@ -36,8 +51,7 @@ const App = () => {
     return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
-  // --- ACTUATORS WITH MANUAL OVERRIDE SUPPORT ---
-  // mode: 'auto' or 'manual'
+  // --- ACTUATORS (MANUAL + AUTO) ---
   const [actuators, setActuators] = useState({
     fan: { state: false, mode: 'auto' },
     light: { state: false, mode: 'auto' },
@@ -47,6 +61,7 @@ const App = () => {
   // --- MODULE STATES ---
   const [searchQuery, setSearchQuery] = useState('');
   const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('techPechay_plantingDate') || '2026-03-01');
+  const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('techPechay_activeSsid') || 'Greenhouse_Router_5G');
 
   // Manual Log Form State
   const [newLogTime, setNewLogTime] = useState('');
@@ -63,11 +78,10 @@ const App = () => {
     localStorage.setItem('techPechay_plantingDate', plantingDate);
     localStorage.setItem('techPechay_logged', isLoggedIn);
     localStorage.setItem('techPechay_currUser', currentUser);
-    localStorage.setItem('techPechay_wifiSsid', wifiSsid);
-    localStorage.setItem('techPechay_wifiPass', wifiPassword);
-  }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, wifiSsid, wifiPassword]);
+    localStorage.setItem('techPechay_activeSsid', activeSsid);
+  }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
-  // Live Simulation effect & Automatic vs Manual Actuator handling
+  // Live Simulation & Actuator Automatic/Manual Logic
   useEffect(() => {
     if (!isLoggedIn) return;
     const interval = setInterval(() => {
@@ -76,12 +90,7 @@ const App = () => {
       const newWater = parseFloat((75 + Math.random() * 15).toFixed(1));
       const newHumid = parseFloat((55 + Math.random() * 20).toFixed(1));
       
-      setSensors({
-        temp: newTemp,
-        humidity: newHumid,
-        moisture: newMoisture,
-        waterLevel: newWater
-      });
+      setSensors({ temp: newTemp, humidity: newHumid, moisture: newMoisture, waterLevel: newWater });
 
       setActuators(prev => ({
         fan: {
@@ -102,7 +111,7 @@ const App = () => {
     return () => clearInterval(interval);
   }, [isLoggedIn, thresholds]);
 
-  // Toggle Actuator Manual/Auto or State
+  // Toggle Actuator
   const handleToggleActuator = (key) => {
     setActuators(prev => {
       const current = prev[key];
@@ -111,12 +120,40 @@ const App = () => {
       } else if (current.state === true) {
         return { ...prev, [key]: { state: false, mode: 'manual' } };
       } else {
-        return { ...prev, [key]: { state: false, mode: 'auto' } }; // return to auto
+        return { ...prev, [key]: { state: false, mode: 'auto' } };
       }
     });
   };
 
-  // --- AUTHENTICATION HANDLERS ---
+  // Modern Device Wi-Fi Scanner Simulation
+  const handleScanWifi = () => {
+    setScanningWifi(true);
+    setTimeout(() => {
+      setAvailableNetworks([
+        { ssid: 'Greenhouse_Router_5G', rssi: -42, secure: true, channels: 'Ch 36' },
+        { ssid: 'TechPechay_Mesh_Ext', rssi: -58, secure: true, channels: 'Ch 11' },
+        { ssid: 'Smart_Bro_LTE_A2', rssi: -68, secure: true, channels: 'Ch 6' },
+        { ssid: 'Greenhouse_Guest_WiFi', rssi: -78, secure: false, channels: 'Ch 1' },
+        { ssid: 'Agri_IoT_Network', rssi: -85, secure: true, channels: 'Ch 3' }
+      ]);
+      setScanningWifi(false);
+    }, 1000);
+  };
+
+  const handleConnectToNetwork = () => {
+    if (!selectedNetwork) return;
+    setConnectingStatus(true);
+    setTimeout(() => {
+      setActiveSsid(selectedNetwork.ssid);
+      setEspConnected(true);
+      setConnectingStatus(false);
+      setWifiModalOpen(false);
+      setSelectedNetwork(null);
+      setWifiPassword('');
+    }, 1500);
+  };
+
+  // --- AUTH HANDLERS ---
   const handleRegister = (e) => {
     e.preventDefault();
     setAuthError(''); setAuthSuccess('');
@@ -144,7 +181,7 @@ const App = () => {
     localStorage.removeItem('techPechay_currUser');
   };
 
-  // --- DATA MANIPULATION (CRUD) ---
+  // --- CRUD HANDLERS ---
   const handleAddLog = (e) => {
     e.preventDefault();
     if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture || !newLogWater) return;
@@ -163,12 +200,12 @@ const App = () => {
 
   const handleDeleteLog = (id) => setHistory(history.filter(item => item.id !== id));
 
-  // --- HARVEST TIME APPROXIMATION ---
+  // --- HARVEST TIME APPROXIMATION (Chinese Cabbage / Pechay 30-35 days) ---
   const calculateHarvestProgress = () => {
     const planted = new Date(plantingDate);
     const today = new Date();
     const diffDays = Math.ceil(Math.abs(today - planted) / (1000 * 60 * 60 * 24));
-    const maturityDays = 32; // Tech Pechay cycle
+    const maturityDays = 32; 
     const progress = Math.min(Math.floor((diffDays / maturityDays) * 100), 100);
     const target = new Date(planted);
     target.setDate(target.getDate() + maturityDays);
@@ -176,14 +213,13 @@ const App = () => {
   };
   const harvestInfo = calculateHarvestProgress();
 
-  // Filter history for search
   const filteredHistory = history.filter(item => 
     item.time.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
     String(item.temp).includes(searchQuery)
   );
 
-  // --- AUTOMATIC TABULAR DOCX EXPORT ---
+  // --- EXPORT TABULAR DOCX ---
   const handleDownloadDocx = () => {
     let htmlContent = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -207,7 +243,6 @@ const App = () => {
           <p><strong>Planting Date:</strong> ${plantingDate} (${harvestInfo.daysElapsed} Days Elapsed - ${harvestInfo.progress}% Maturity)</p>
           <p><strong>Estimated Harvest Date:</strong> ${harvestInfo.targetDate}</p>
         </div>
-
         <h3>Current Sensor Telemetry</h3>
         <ul>
           <li>Temperature: ${sensors.temp} °C</li>
@@ -215,7 +250,6 @@ const App = () => {
           <li>Substrate Moisture: ${sensors.moisture} %</li>
           <li>Water Reservoir Level: ${sensors.waterLevel} %</li>
         </ul>
-
         <h3>Historical Telemetry Database</h3>
         <table>
           <thead>
@@ -244,12 +278,7 @@ const App = () => {
       `;
     });
 
-    htmlContent += `
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
+    htmlContent += `</tbody></table></body></html>`;
 
     const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
@@ -334,9 +363,9 @@ const App = () => {
         </div>
 
         <div className="flex flex-wrap gap-3 items-center">
-          {/* Wi-Fi Status / Connect Button */}
+          {/* Wi-Fi Selector Trigger */}
           <button onClick={() => setWifiModalOpen(true)} className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335] ${espConnected ? 'text-[#34D399]' : 'text-amber-400'}`}>
-            <Wifi className="w-4 h-4" /> {wifiSsid} ({espConnected ? 'Connected' : 'Config'})
+            <Wifi className="w-4 h-4" /> {activeSsid} ({espConnected ? 'Connected' : 'Offline'})
           </button>
 
           <button onClick={handleDownloadDocx} className="bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#22D3EE] transition shadow-[3px_3px_8px_#05070c,-3px_-3px_8px_#192335]">
@@ -349,31 +378,82 @@ const App = () => {
         </div>
       </header>
 
-      {/* Wi-Fi Modal */}
+      {/* Modern Phone/PC-Style Wi-Fi Selector Modal */}
       {wifiModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md shadow-[8px_8px_20px_#05070c]">
-            <h3 className="text-lg font-bold text-[#22D3EE] mb-2 flex items-center gap-2"><Wifi className="w-5 h-5"/> ESP32 Wi-Fi Configuration</h3>
-            <p className="text-xs text-gray-400 mb-4">Connect your ESP32 microcontroller to your greenhouse local network SSID.</p>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-gray-300 uppercase font-semibold block mb-1">Network SSID</label>
-                <input type="text" value={wifiSsid} onChange={e => setWifiSsid(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-[#22D3EE]" />
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-base font-bold text-[#22D3EE] flex items-center gap-2"><Wifi className="w-5 h-5"/> ESP32 Wi-Fi Networks</h3>
+              <button onClick={handleScanWifi} className="p-2 bg-[#0B0F19] border border-[#1F2937] rounded-xl text-xs text-[#34D399] flex items-center gap-1 hover:bg-[#161e31]">
+                <RefreshCw className={`w-3.5 h-3.5 ${scanningWifi ? 'animate-spin' : ''}`} /> Scan
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mb-4">Click any nearby network discovered by your ESP32 module to connect.</p>
+
+            {/* List of Scanned Networks */}
+            <div className="space-y-2 mb-4 max-h-52 overflow-y-auto pr-1">
+              {scanningWifi ? (
+                <div className="text-center py-8 text-gray-400 text-xs flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-[#22D3EE]" />
+                  Scanning nearby SSIDs...
+                </div>
+              ) : (
+                availableNetworks.map((net, idx) => (
+                  <div 
+                    key={idx} 
+                    onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} 
+                    className={`p-3 rounded-2xl border cursor-pointer transition flex justify-between items-center ${selectedNetwork?.ssid === net.ssid ? 'bg-[#22D3EE]/10 border-[#22D3EE] text-white shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'bg-[#0B0F19] border-[#1F2937] text-gray-300 hover:bg-[#161e31]'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Wifi className={`w-4 h-4 ${net.rssi > -60 ? 'text-[#34D399]' : net.rssi > -75 ? 'text-amber-400' : 'text-gray-500'}`} />
+                      <div>
+                        <p className="text-xs font-bold">{net.ssid}</p>
+                        <p className="text-[10px] text-gray-500">{net.secure ? 'Secured (WPA2)' : 'Open Network'} • {net.channels}</p>
+                      </div>
+                    </div>
+                    {net.secure && <Lock className="w-3.5 h-3.5 text-gray-500" />}
+                    {selectedNetwork?.ssid === net.ssid && <CheckCircle className="w-4 h-4 text-[#22D3EE]" />}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Password input when a secure network is selected */}
+            {selectedNetwork && (
+              <div className="space-y-3 mb-4 bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937]">
+                <p className="text-xs font-bold text-[#34D399]">Connect to: {selectedNetwork.ssid}</p>
+                {selectedNetwork.secure && (
+                  <div>
+                    <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Enter Password</label>
+                    <input 
+                      type="password" 
+                      value={wifiPassword} 
+                      onChange={e => setWifiPassword(e.target.value)} 
+                      placeholder="Network Password" 
+                      className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#22D3EE]" 
+                      autoFocus
+                    />
+                  </div>
+                )}
+                <button 
+                  onClick={handleConnectToNetwork} 
+                  disabled={connectingStatus}
+                  className="w-full bg-[#10B981] hover:bg-[#059669] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2"
+                >
+                  {connectingStatus ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+                  {connectingStatus ? 'Connecting to ESP32...' : `Connect (${selectedNetwork.ssid})`}
+                </button>
               </div>
-              <div>
-                <label className="text-xs text-gray-300 uppercase font-semibold block mb-1">Wi-Fi Password</label>
-                <input type="password" value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} placeholder="Enter password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-[#22D3EE]" />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => { setEspConnected(true); setWifiModalOpen(false); }} className="flex-1 bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-sm transition">Save & Connect</button>
-                <button onClick={() => setWifiModalOpen(false)} className="flex-1 bg-gray-800 text-gray-300 font-bold py-2.5 rounded-xl text-sm transition">Cancel</button>
-              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button onClick={() => { setWifiModalOpen(false); setSelectedNetwork(null); }} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold rounded-xl text-xs transition">Close</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Harvest Time Approximation Module */}
+      {/* Harvest Time Approximation Module (Chinese Cabbage / Pechay 30-35 days) */}
       <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c] mb-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
