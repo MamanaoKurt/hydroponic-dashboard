@@ -31,14 +31,21 @@ const App = () => {
   const [customSsidModal, setCustomSsidModal] = useState(false);
   const [customSsid, setCustomSsid] = useState('');
 
-  // --- SENSORS & TELEMETRY ---
-  const [sensors, setSensors] = useState({ temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85 });
+  // --- SENSORS & TELEMETRY (Dual Pots) ---
+  const [sensors, setSensors] = useState({ 
+    temp: 24.5, 
+    humidity: 60, 
+    moisture1: 45, 
+    moisture2: 48, 
+    waterLevel: 85 
+  });
+  
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem('pekinensis_history');
     return saved ? JSON.parse(saved) : [
-      { id: 1, time: '10:00 AM', temp: 24.5, humidity: 60, moisture: 45, waterLevel: 85, status: 'Optimal' },
-      { id: 2, time: '10:03 AM', temp: 26.0, humidity: 58, moisture: 42, waterLevel: 84, status: 'Optimal' },
-      { id: 3, time: '10:06 AM', temp: 28.2, humidity: 55, moisture: 38, waterLevel: 82, status: 'Warning' }
+      { id: 1, time: '10:00 AM', temp: 24.5, humidity: 60, moisture1: 45, moisture2: 48, waterLevel: 85, status: 'Optimal' },
+      { id: 2, time: '10:03 AM', temp: 26.0, humidity: 58, moisture1: 42, moisture2: 44, waterLevel: 84, status: 'Optimal' },
+      { id: 3, time: '10:06 AM', temp: 28.2, humidity: 55, moisture1: 38, moisture2: 36, waterLevel: 82, status: 'Warning' }
     ];
   });
   
@@ -47,20 +54,23 @@ const App = () => {
     return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
   });
 
+  // Actuators including dual solenoid valves
   const [actuators, setActuators] = useState({
     fan: { state: false, mode: 'auto' },
     light: { state: false, mode: 'auto' },
-    pump: { state: false, mode: 'auto' }
+    valve1: { state: false, mode: 'auto' },
+    valve2: { state: false, mode: 'auto' }
   });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [plantingDate, setPlantingDate] = useState(() => localStorage.getItem('pekinensis_plantingDate') || '2026-03-01');
 
-  // Manual Log Form State
+  // Manual Log Form State (Dual Pots)
   const [newLogTime, setNewLogTime] = useState('');
   const [newLogTemp, setNewLogTemp] = useState('');
   const [newLogHumidity, setNewLogHumidity] = useState('');
-  const [newLogMoisture, setNewLogMoisture] = useState('');
+  const [newLogMoisture1, setNewLogMoisture1] = useState('');
+  const [newLogMoisture2, setNewLogMoisture2] = useState('');
   const [newLogWater, setNewLogWater] = useState('');
 
   useEffect(() => {
@@ -107,21 +117,23 @@ const App = () => {
     }
   };
 
-  // Live Simulation & Actuator Logic
+  // Live Simulation & Actuator Logic for Dual Pots
   useEffect(() => {
     if (!isLoggedIn) return;
     const interval = setInterval(() => {
       const newTemp = parseFloat((22 + Math.random() * 10).toFixed(1));
-      const newMoisture = parseFloat((30 + Math.random() * 40).toFixed(1));
+      const newMoisture1 = parseFloat((30 + Math.random() * 40).toFixed(1));
+      const newMoisture2 = parseFloat((30 + Math.random() * 40).toFixed(1));
       const newWater = parseFloat((75 + Math.random() * 15).toFixed(1));
       const newHumid = parseFloat((55 + Math.random() * 20).toFixed(1));
       
-      setSensors({ temp: newTemp, humidity: newHumid, moisture: newMoisture, waterLevel: newWater });
+      setSensors({ temp: newTemp, humidity: newHumid, moisture1: newMoisture1, moisture2: newMoisture2, waterLevel: newWater });
 
       setActuators(prev => ({
         fan: { state: prev.fan.mode === 'auto' ? newTemp > thresholds.hotTemp : prev.fan.state, mode: prev.fan.mode },
         light: { state: prev.light.mode === 'auto' ? newTemp < thresholds.coldTemp : prev.light.state, mode: prev.light.mode },
-        pump: { state: prev.pump.mode === 'auto' ? newMoisture < thresholds.dryMoisture : prev.pump.state, mode: prev.pump.mode }
+        valve1: { state: prev.valve1.mode === 'auto' ? newMoisture1 < thresholds.dryMoisture : prev.valve1.state, mode: prev.valve1.mode },
+        valve2: { state: prev.valve2.mode === 'auto' ? newMoisture2 < thresholds.dryMoisture : prev.valve2.state, mode: prev.valve2.mode }
       }));
     }, 4000);
 
@@ -193,14 +205,14 @@ const App = () => {
 
   const handleAddLog = (e) => {
     e.preventDefault();
-    if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture || !newLogWater) return;
+    if (!newLogTime || !newLogTemp || !newLogHumidity || !newLogMoisture1 || !newLogMoisture2 || !newLogWater) return;
     const newItem = {
       id: Date.now(), time: newLogTime, temp: parseFloat(newLogTemp),
-      humidity: parseFloat(newLogHumidity), moisture: parseFloat(newLogMoisture),
-      waterLevel: parseFloat(newLogWater), status: 'Manual Entry'
+      humidity: parseFloat(newLogHumidity), moisture1: parseFloat(newLogMoisture1),
+      moisture2: parseFloat(newLogMoisture2), waterLevel: parseFloat(newLogWater), status: 'Manual Entry'
     };
     setHistory([newItem, ...history]);
-    setNewLogTime(''); setNewLogTemp(''); setNewLogHumidity(''); setNewLogMoisture(''); setNewLogWater('');
+    setNewLogTime(''); setNewLogTemp(''); setNewLogHumidity(''); setNewLogMoisture1(''); setNewLogMoisture2(''); setNewLogWater('');
   };
 
   const handleDeleteLog = (id) => setHistory(history.filter(item => item.id !== id));
@@ -231,7 +243,8 @@ const App = () => {
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Time", bold: true, color: "FFFFFF" })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Temp (°C)", bold: true, color: "FFFFFF" })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Humidity (%)", bold: true, color: "FFFFFF" })] })] }),
-            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Moisture (%)", bold: true, color: "FFFFFF" })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Moisture 1 (%)", bold: true, color: "FFFFFF" })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Moisture 2 (%)", bold: true, color: "FFFFFF" })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Water (%)", bold: true, color: "FFFFFF" })] })] }),
             new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Status", bold: true, color: "FFFFFF" })] })] }),
           ],
@@ -245,7 +258,8 @@ const App = () => {
               new TableCell({ children: [new Paragraph(item.time)] }),
               new TableCell({ children: [new Paragraph(String(item.temp))] }),
               new TableCell({ children: [new Paragraph(String(item.humidity ?? '-'))] }),
-              new TableCell({ children: [new Paragraph(String(item.moisture))] }),
+              new TableCell({ children: [new Paragraph(String(item.moisture1))] }),
+              new TableCell({ children: [new Paragraph(String(item.moisture2))] }),
               new TableCell({ children: [new Paragraph(String(item.waterLevel ?? '-'))] }),
               new TableCell({ children: [new Paragraph(item.status)] }),
             ],
@@ -258,7 +272,7 @@ const App = () => {
           {
             properties: {},
             children: [
-              new Paragraph({ text: "🌱 Pekinensis Greenhouse Report", heading: HeadingLevel.HEADING_1 }),
+              new Paragraph({ text: "🌱 Pekinensis Greenhouse Report (Dual Pot)", heading: HeadingLevel.HEADING_1 }),
               new Paragraph({ text: `Generated By: ${currentUser || 'Admin'}` }),
               new Paragraph({ text: `Date Generated: ${new Date().toLocaleString()}` }),
               new Paragraph({ text: `Planting Date: ${plantingDate} (${harvestInfo.daysElapsed} Days Elapsed - ${harvestInfo.progress}% Maturity)` }),
@@ -267,7 +281,8 @@ const App = () => {
               new Paragraph({ text: "Current Sensor Telemetry", heading: HeadingLevel.HEADING_2 }),
               new Paragraph({ text: `• Temperature: ${sensors.temp} °C` }),
               new Paragraph({ text: `• Humidity: ${sensors.humidity} %` }),
-              new Paragraph({ text: `• Substrate Moisture: ${sensors.moisture} %` }),
+              new Paragraph({ text: `• Soil Moisture Pot 1: ${sensors.moisture1} %` }),
+              new Paragraph({ text: `• Soil Moisture Pot 2: ${sensors.moisture2} %` }),
               new Paragraph({ text: `• Water Reservoir Level: ${sensors.waterLevel} %` }),
               new Paragraph({ text: "" }),
               new Paragraph({ text: "Historical Telemetry Database", heading: HeadingLevel.HEADING_2 }),
@@ -284,7 +299,7 @@ const App = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Pekinensis_Greenhouse_Report_${new Date().toISOString().slice(0, 10)}.docx`;
+      a.download = `Pekinensis_DualPot_Report_${new Date().toISOString().slice(0, 10)}.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -349,7 +364,7 @@ const App = () => {
     <div className="min-h-screen bg-[#0B0F19] text-gray-100 p-4 md:p-8 font-sans">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-[#111827] p-6 rounded-3xl border border-[#1F2937] shadow-[6px_6px_16px_#05070c,-6px_-6px_16px_#1d283c]">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2">🌱 Pekinensis</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-[#34D399] flex items-center gap-2">🌱 Pekinensis (Dual Pot)</h1>
           <p className="text-gray-400 text-sm mt-1">Greenhouse Intelligence Console • User: <strong className="text-[#22D3EE]">{currentUser}</strong></p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
@@ -512,23 +527,27 @@ const App = () => {
         </div>
       </div>
 
-      {/* Sensor Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
-          <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Temperature</p><p className="text-3xl font-bold text-white">{sensors.temp}<span className="text-lg text-orange-400">°C</span></p></div>
-          <Thermometer className="text-orange-400 w-7 h-7" />
+      {/* Sensor Cards (Including Soil Moisture 1 & 2) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="bg-[#111827] p-5 rounded-3xl border border-[#1F2937] flex items-center justify-between">
+          <div><p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Temperature</p><p className="text-2xl font-bold text-white">{sensors.temp}<span className="text-base text-orange-400">°C</span></p></div>
+          <Thermometer className="text-orange-400 w-6 h-6" />
         </div>
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
-          <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Humidity</p><p className="text-3xl font-bold text-white">{sensors.humidity}<span className="text-lg text-[#22D3EE]">%</span></p></div>
-          <CloudRain className="text-[#22D3EE] w-7 h-7" />
+        <div className="bg-[#111827] p-5 rounded-3xl border border-[#1F2937] flex items-center justify-between">
+          <div><p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Humidity</p><p className="text-2xl font-bold text-white">{sensors.humidity}<span className="text-base text-[#22D3EE]">%</span></p></div>
+          <CloudRain className="text-[#22D3EE] w-6 h-6" />
         </div>
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
-          <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Substrate Moisture</p><p className="text-3xl font-bold text-white">{sensors.moisture}<span className="text-lg text-[#34D399]">%</span></p></div>
-          <Droplets className="text-[#34D399] w-7 h-7" />
+        <div className="bg-[#111827] p-5 rounded-3xl border border-[#1F2937] flex items-center justify-between">
+          <div><p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Soil Moisture 1</p><p className="text-2xl font-bold text-white">{sensors.moisture1}<span className="text-base text-[#34D399]">%</span></p></div>
+          <Droplets className="text-[#34D399] w-6 h-6" />
         </div>
-        <div className="bg-[#111827] p-6 rounded-3xl border border-[#1F2937] flex items-center justify-between">
-          <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Water Reservoir</p><p className="text-3xl font-bold text-white">{sensors.waterLevel}<span className="text-lg text-cyan-400">%</span></p></div>
-          <Waves className="text-cyan-400 w-7 h-7" />
+        <div className="bg-[#111827] p-5 rounded-3xl border border-[#1F2937] flex items-center justify-between">
+          <div><p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Soil Moisture 2</p><p className="text-2xl font-bold text-white">{sensors.moisture2}<span className="text-base text-emerald-400">%</span></p></div>
+          <Droplets className="text-emerald-400 w-6 h-6" />
+        </div>
+        <div className="bg-[#111827] p-5 rounded-3xl border border-[#1F2937] flex items-center justify-between">
+          <div><p className="text-[11px] font-semibold text-gray-400 uppercase mb-1">Water Reservoir</p><p className="text-2xl font-bold text-white">{sensors.waterLevel}<span className="text-base text-cyan-400">%</span></p></div>
+          <Waves className="text-cyan-400 w-6 h-6" />
         </div>
       </div>
 
@@ -544,7 +563,8 @@ const App = () => {
                 <YAxis stroke="#9CA3AF" fontSize={11} />
                 <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid #1F2937', borderRadius: '12px' }} />
                 <Line type="monotone" dataKey="temp" stroke="#F97316" strokeWidth={2} name="Temp (°C)" />
-                <Line type="monotone" dataKey="moisture" stroke="#34D399" strokeWidth={2} name="Moisture (%)" />
+                <Line type="monotone" dataKey="moisture1" stroke="#34D399" strokeWidth={2} name="Moisture 1 (%)" />
+                <Line type="monotone" dataKey="moisture2" stroke="#10B981" strokeWidth={2} name="Moisture 2 (%)" />
                 <Line type="monotone" dataKey="waterLevel" stroke="#22D3EE" strokeWidth={2} name="Water (%)" />
               </LineChart>
             </ResponsiveContainer>
@@ -557,21 +577,26 @@ const App = () => {
               <h2 className="text-lg font-semibold text-gray-200">Actuators & Manual Override</h2>
               <span className="text-xs text-gray-400 bg-[#0B0F19] px-3 py-1 rounded-xl border border-[#1F2937]">Click card to override</span>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <button onClick={() => handleToggleActuator('fan')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
-                <Fan className={`w-7 h-7 mb-2 ${actuators.fan.state ? 'animate-spin text-[#34D399]' : ''}`} />
-                <span className="text-xs font-bold">Exhaust Fan</span>
-                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.fan.mode}: {actuators.fan.state ? 'ON' : 'OFF'}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button onClick={() => handleToggleActuator('fan')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
+                <Fan className={`w-6 h-6 mb-2 ${actuators.fan.state ? 'animate-spin text-[#34D399]' : ''}`} />
+                <span className="text-[11px] font-bold">Exhaust Fan</span>
+                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.fan.mode}: {actuators.fan.state ? 'ON' : 'OFF'}</span>
               </button>
-              <button onClick={() => handleToggleActuator('light')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.light.state ? 'bg-[#22D3EE]/10 border border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
-                <Lightbulb className={`w-7 h-7 mb-2 ${actuators.light.state ? 'text-[#22D3EE]' : ''}`} />
-                <span className="text-xs font-bold">Grow Lights</span>
-                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.light.mode}: {actuators.light.state ? 'ON' : 'OFF'}</span>
+              <button onClick={() => handleToggleActuator('light')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.light.state ? 'bg-[#22D3EE]/10 border border-[#22D3EE]/40 text-[#22D3EE]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
+                <Lightbulb className={`w-6 h-6 mb-2 ${actuators.light.state ? 'text-[#22D3EE]' : ''}`} />
+                <span className="text-[11px] font-bold">Grow Lights</span>
+                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.light.mode}: {actuators.light.state ? 'ON' : 'OFF'}</span>
               </button>
-              <button onClick={() => handleToggleActuator('pump')} className={`p-4 rounded-2xl flex flex-col items-center transition ${actuators.pump.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
-                <Power className={`w-7 h-7 mb-2 ${actuators.pump.state ? 'text-cyan-400' : ''}`} />
-                <span className="text-xs font-bold">Water Pump</span>
-                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-md bg-[#111827] uppercase">{actuators.pump.mode}: {actuators.pump.state ? 'ON' : 'OFF'}</span>
+              <button onClick={() => handleToggleActuator('valve1')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.valve1.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
+                <Power className={`w-6 h-6 mb-2 ${actuators.valve1.state ? 'text-cyan-400' : ''}`} />
+                <span className="text-[11px] font-bold text-center">Solenoid Valve 1</span>
+                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.valve1.mode}: {actuators.valve1.state ? 'ON' : 'OFF'}</span>
+              </button>
+              <button onClick={() => handleToggleActuator('valve2')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.valve2.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
+                <Power className={`w-6 h-6 mb-2 ${actuators.valve2.state ? 'text-cyan-400' : ''}`} />
+                <span className="text-[11px] font-bold text-center">Solenoid Valve 2</span>
+                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.valve2.mode}: {actuators.valve2.state ? 'ON' : 'OFF'}</span>
               </button>
             </div>
           </div>
@@ -588,7 +613,7 @@ const App = () => {
                 <input type="number" value={thresholds.coldTemp} onChange={e => setThresholds({...thresholds, coldTemp: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937]" />
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-gray-400">Min Moisture (Pump On) %</span>
+                <span className="text-gray-400">Min Moisture (Valves On) %</span>
                 <input type="number" value={thresholds.dryMoisture} onChange={e => setThresholds({...thresholds, dryMoisture: parseFloat(e.target.value)})} className="bg-[#0B0F19] text-white px-3 py-1.5 rounded-xl w-20 text-center border border-[#1F2937]" />
               </div>
             </div>
@@ -615,14 +640,18 @@ const App = () => {
                 <input type="number" step="0.1" value={newLogHumidity} onChange={e => setNewLogHumidity(e.target.value)} placeholder="60" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Moisture (%)</label>
-                <input type="number" step="0.1" value={newLogMoisture} onChange={e => setNewLogMoisture(e.target.value)} placeholder="45" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Moist 1 (%)</label>
+                <input type="number" step="0.1" value={newLogMoisture1} onChange={e => setNewLogMoisture1(e.target.value)} placeholder="45" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-2.5 py-2.5 rounded-xl text-white" required />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Moist 2 (%)</label>
+                <input type="number" step="0.1" value={newLogMoisture2} onChange={e => setNewLogMoisture2(e.target.value)} placeholder="48" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-2.5 py-2.5 rounded-xl text-white" required />
               </div>
               <div>
                 <label className="text-[10px] uppercase text-gray-400 font-semibold block mb-1">Water (%)</label>
-                <input type="number" step="0.1" value={newLogWater} onChange={e => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-3.5 py-2.5 rounded-xl text-white" required />
+                <input type="number" step="0.1" value={newLogWater} onChange={e => setNewLogWater(e.target.value)} placeholder="80" className="w-full bg-[#0B0F19] border border-[#1F2937] text-xs px-2.5 py-2.5 rounded-xl text-white" required />
               </div>
             </div>
             <button type="submit" className="w-full bg-[#34D399] hover:bg-[#10B981] text-[#0B0F19] font-bold py-3 rounded-xl text-xs transition mt-2">Save to Database</button>
@@ -640,7 +669,7 @@ const App = () => {
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-xs text-gray-300">
               <thead className="bg-[#0B0F19] text-gray-400 uppercase text-[10px] sticky top-0">
-                <tr><th className="p-3">Time</th><th className="p-3">Temp</th><th className="p-3">Humidity</th><th className="p-3">Moisture</th><th className="p-3">Water</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr>
+                <tr><th className="p-3">Time</th><th className="p-3">Temp</th><th className="p-3">Humid</th><th className="p-3">Moist 1</th><th className="p-3">Moist 2</th><th className="p-3">Water</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr>
               </thead>
               <tbody className="divide-y divide-[#1F2937]">
                 {filteredHistory.length > 0 ? (
@@ -649,7 +678,8 @@ const App = () => {
                       <td className="p-3 font-medium text-white">{item.time}</td>
                       <td className="p-3">{item.temp}°C</td>
                       <td className="p-3">{item.humidity ?? '-'}%</td>
-                      <td className="p-3">{item.moisture}%</td>
+                      <td className="p-3">{item.moisture1}%</td>
+                      <td className="p-3">{item.moisture2}%</td>
                       <td className="p-3">{item.waterLevel ?? '-'}%</td>
                       <td className="p-3"><span className="px-2 py-0.5 rounded-lg text-[10px] bg-[#34D399]/10 text-[#34D399] border border-[#34D399]/30">{item.status}</span></td>
                       <td className="p-3 text-right">
@@ -658,7 +688,7 @@ const App = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="7" className="p-4 text-center text-gray-500">No matching records found.</td></tr>
+                  <tr><td colSpan="8" className="p-4 text-center text-gray-500">No matching records found.</td></tr>
                 )}
               </tbody>
             </table>
