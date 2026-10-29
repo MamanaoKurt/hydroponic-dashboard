@@ -19,13 +19,13 @@ const App = () => {
   const [isInstalled, setIsInstalled] = useState(false);
   const [installModalOpen, setInstallModalOpen] = useState(false);
 
-  // --- ESP32 WIFI MODAL STATE ---
+  // --- ESP32 WIFI & HARDWARE CONNECTION STATE ---
   const [wifiModalOpen, setWifiModalOpen] = useState(false);
   const [scanningWifi, setScanningWifi] = useState(false);
   const [availableNetworks, setAvailableNetworks] = useState([]);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
-  const [espIpAddress, setEspIpAddress] = useState('192.168.4.1');
+  const [espIpAddress, setEspIpAddress] = useState('192.168.1.50'); // Update to your actual ESP32 IP
   const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('pekinensis_activeSsid') || 'Not Connected');
   const [connectingStatus, setConnectingStatus] = useState(false);
   const [customSsidModal, setCustomSsidModal] = useState(false);
@@ -51,7 +51,7 @@ const App = () => {
   
   const [thresholds, setThresholds] = useState(() => {
     const saved = localStorage.getItem('pekinensis_thresholds');
-    return saved ? JSON.parse(saved) : { hotTemp: 30, coldTemp: 20, dryMoisture: 30 };
+    return saved ? JSON.parse(saved) : { hotTemp: 33, coldTemp: 28, dryMoisture: 30 };
   });
 
   // Actuators including dual solenoid valves
@@ -104,6 +104,44 @@ const App = () => {
     };
   }, [users, history, thresholds, plantingDate, isLoggedIn, currentUser, activeSsid]);
 
+  // --- LIVE ESP32 TELEMETRY FETCH LOOP ---
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const fetchEspTelemetry = async () => {
+      try {
+        const response = await fetch(`http://${espIpAddress}/telemetry`);
+        if (response.ok) {
+          const data = await response.json();
+          setSensors({
+            temp: data.temp,
+            humidity: data.humidity,
+            moisture1: data.moisture1,
+            moisture2: data.moisture2,
+            waterLevel: data.waterLevel
+          });
+          setActuators(prev => ({
+            fan: { ...prev.fan, state: data.fan },
+            light: { ...prev.light, state: data.light },
+            valve1: { ...prev.valve1, state: data.valve1 },
+            valve2: { ...prev.valve2, state: data.valve2 }
+          }));
+        }
+      } catch (err) {
+        // Fallback simulation if ESP32 is offline during development/testing
+        const newTemp = parseFloat((24 + Math.random() * 5).toFixed(1));
+        const newM1 = parseFloat((35 + Math.random() * 20).toFixed(1));
+        const newM2 = parseFloat((35 + Math.random() * 20).toFixed(1));
+        const newWater = parseFloat((70 + Math.random() * 10).toFixed(1));
+        setSensors(prev => ({ ...prev, temp: newTemp, moisture1: newM1, moisture2: newM2, waterLevel: newWater }));
+      }
+    };
+
+    fetchEspTelemetry();
+    const interval = setInterval(fetchEspTelemetry, 3000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, espIpAddress]);
+
   const handleInstallClick = async () => {
     if (installPrompt) {
       installPrompt.prompt();
@@ -117,35 +155,12 @@ const App = () => {
     }
   };
 
-  // Live Simulation & Actuator Logic for Dual Pots
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    const interval = setInterval(() => {
-      const newTemp = parseFloat((22 + Math.random() * 10).toFixed(1));
-      const newMoisture1 = parseFloat((30 + Math.random() * 40).toFixed(1));
-      const newMoisture2 = parseFloat((30 + Math.random() * 40).toFixed(1));
-      const newWater = parseFloat((75 + Math.random() * 15).toFixed(1));
-      const newHumid = parseFloat((55 + Math.random() * 20).toFixed(1));
-      
-      setSensors({ temp: newTemp, humidity: newHumid, moisture1: newMoisture1, moisture2: newMoisture2, waterLevel: newWater });
-
-      setActuators(prev => ({
-        fan: { state: prev.fan.mode === 'auto' ? newTemp > thresholds.hotTemp : prev.fan.state, mode: prev.fan.mode },
-        light: { state: prev.light.mode === 'auto' ? newTemp < thresholds.coldTemp : prev.light.state, mode: prev.light.mode },
-        valve1: { state: prev.valve1.mode === 'auto' ? newMoisture1 < thresholds.dryMoisture : prev.valve1.state, mode: prev.valve1.mode },
-        valve2: { state: prev.valve2.mode === 'auto' ? newMoisture2 < thresholds.dryMoisture : prev.valve2.state, mode: prev.valve2.mode }
-      }));
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [isLoggedIn, thresholds]);
-
   const handleToggleActuator = (key) => {
     setActuators(prev => {
       const current = prev[key];
-      if (current.mode === 'auto') return { ...prev, [key]: { state: true, mode: 'manual' } };
-      if (current.state === true) return { ...prev, [key]: { state: false, mode: 'manual' } };
-      return { ...prev, [key]: { state: false, mode: 'auto' } };
+      const newMode = current.mode === 'auto' ? 'manual' : 'auto';
+      const newState = !current.state;
+      return { ...prev, [key]: { state: newState, mode: newMode } };
     });
   };
 
@@ -160,7 +175,6 @@ const App = () => {
         setAvailableNetworks([]);
       }
     } catch (err) {
-      console.log('ESP32 offline or IP unreachable.');
       setAvailableNetworks([]);
     } finally {
       setScanningWifi(false);
@@ -408,7 +422,7 @@ const App = () => {
         </div>
       )}
 
-      {/* Wi-Fi Modal */}
+      {/* ESP32 / IP Configuration Modal */}
       {wifiModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-md shadow-[8px_8px_20px_#05070c] relative">
@@ -416,86 +430,18 @@ const App = () => {
             
             <div className="flex items-center gap-2 mb-1">
               <Wifi className="w-5 h-5 text-[#34D399]" />
-              <h3 className="text-lg font-bold text-white">ESP32 Wi-Fi</h3>
+              <h3 className="text-lg font-bold text-white">ESP32 Connection Configuration</h3>
             </div>
-            <p className="text-xs text-gray-400 mb-3">Pick the network the ESP32 should use. No re-flashing needed.</p>
+            <p className="text-xs text-gray-400 mb-3">Link your dashboard to your ESP32 IP address.</p>
 
-            <div className="mb-3">
+            <div className="mb-4">
               <label className="text-[10px] text-gray-400 uppercase block mb-1">ESP32 Device IP Address</label>
-              <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-1.5 text-xs text-white" />
+              <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white" />
             </div>
 
-            <div className="space-y-2 mb-4 max-h-52 overflow-y-auto pr-1">
-              {scanningWifi ? (
-                <div className="text-center py-6 text-gray-400 text-xs flex flex-col items-center gap-2">
-                  <RefreshCw className="w-5 h-5 animate-spin text-[#22D3EE]" />
-                  Scanning nearby networks from ESP32...
-                </div>
-              ) : availableNetworks.length > 0 ? (
-                availableNetworks.map((net, idx) => {
-                  const isConnected = net.ssid === activeSsid;
-                  const isSelected = selectedNetwork?.ssid === net.ssid;
-                  return (
-                    <div 
-                      key={idx} 
-                      onClick={() => { setSelectedNetwork(net); setWifiPassword(''); }} 
-                      className={`p-3.5 rounded-2xl border cursor-pointer transition flex justify-between items-center ${isSelected ? 'bg-[#1e293b] border-[#34D399] text-white' : 'bg-[#161e31] border-[#1F2937] text-gray-200 hover:bg-[#1a2338]'}`}
-                    >
-                      <div>
-                        <p className="text-xs font-bold">{net.ssid}</p>
-                        {isConnected ? (
-                          <p className="text-[10px] text-[#34D399] font-semibold mt-0.5">CONNECTED</p>
-                        ) : (
-                          <p className="text-[10px] text-gray-500 mt-0.5">RSSI: {net.rssi} dBm • {net.secure ? 'Secured' : 'Open'}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {net.secure && <Lock className="w-3.5 h-3.5 text-gray-400" />}
-                        <Wifi className="w-4 h-4 text-[#34D399]" />
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-8 text-gray-500 text-xs bg-[#0B0F19] rounded-2xl border border-[#1F2937]">
-                  No networks loaded. Click 'Rescan' to fetch live Wi-Fi list from your ESP32.
-                </div>
-              )}
-            </div>
-
-            {selectedNetwork && selectedNetwork.ssid !== activeSsid && (
-              <div className="space-y-3 mb-4 bg-[#0B0F19] p-4 rounded-2xl border border-[#1F2937]">
-                <p className="text-xs font-bold text-[#34D399]">Connect to: {selectedNetwork.ssid}</p>
-                <input type="password" value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} placeholder="Network Password" className="w-full bg-[#111827] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white" autoFocus />
-                <button onClick={handleConnectToNetwork} disabled={connectingStatus} className="w-full bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
-                  {connectingStatus ? 'Configuring ESP32...' : 'Connect'}
-                </button>
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-2 border-t border-[#1F2937]">
-              <button onClick={handleScanRealWifi} className="flex-1 bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] text-gray-200 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2">
-                <RefreshCw className={`w-3.5 h-3.5 ${scanningWifi ? 'animate-spin text-[#34D399]' : ''}`} /> Rescan
-              </button>
-              <button onClick={() => setCustomSsidModal(true)} className="flex-1 bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] text-gray-200 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2">
-                <PlusCircle className="w-3.5 h-3.5 text-[#22D3EE]" /> + Other network
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Network Modal */}
-      {customSsidModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#111827] border border-[#1F2937] p-6 rounded-3xl w-full max-w-sm">
-            <h3 className="text-sm font-bold text-white mb-2">Connect to Hidden/Other Network</h3>
-            <input type="text" value={customSsid} onChange={e => setCustomSsid(e.target.value)} placeholder="SSID Name" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white mb-3" />
-            <input type="password" placeholder="Password" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white mb-4" />
-            <div className="flex gap-2">
-              <button onClick={() => { if(customSsid) { setActiveSsid(customSsid); setCustomSsidModal(false); setWifiModalOpen(false); }}} className="flex-1 bg-[#10B981] text-[#0B0F19] font-bold py-2 rounded-xl text-xs">Connect</button>
-              <button onClick={() => setCustomSsidModal(false)} className="flex-1 bg-gray-800 text-gray-300 py-2 rounded-xl text-xs">Cancel</button>
-            </div>
+            <button onClick={() => setWifiModalOpen(false)} className="w-full bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
+              Save & Connect
+            </button>
           </div>
         </div>
       )}
