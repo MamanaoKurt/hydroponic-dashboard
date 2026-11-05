@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Power, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Fan, Lightbulb, Waves, Search, Plus, Trash2, FileText, Calendar, UserPlus, LogIn, Wifi, RefreshCw, Lock, CheckCircle, X, PlusCircle, Download } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun, Table, TableCell, TableRow, WidthType, HeadingLevel } from 'docx';
+
+// ESP32 address (static IP set in the .ino). Editable from the Wi-Fi button in the header.
+const DEFAULT_ESP_IP = '192.168.1.6';
+const loadEspIp = () => localStorage.getItem('pekinensis_espIp') || DEFAULT_ESP_IP;
+
+// fetch() with a timeout so an unplugged ESP32 can't hang the dashboard.
+const espFetch = async (ip, path, options = {}, timeoutMs = 2500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(`http://${ip}${path}`, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 const App = () => {
   // --- PERSISTENT AUTHENTICATION STATE ---
@@ -25,7 +40,10 @@ const App = () => {
   const [availableNetworks, setAvailableNetworks] = useState([]);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [wifiPassword, setWifiPassword] = useState('');
-  const [espIpAddress, setEspIpAddress] = useState('192.168.1.50'); // Update to your actual ESP32 IP
+  const [espIpAddress, setEspIpAddress] = useState(loadEspIp);
+  const [ipDraft, setIpDraft] = useState(loadEspIp);
+  const [espOnline, setEspOnline] = useState(false);
+  const [controlError, setControlError] = useState('');
   const [activeSsid, setActiveSsid] = useState(() => localStorage.getItem('pekinensis_activeSsid') || 'Not Connected');
   const [connectingStatus, setConnectingStatus] = useState(false);
   const [customSsidModal, setCustomSsidModal] = useState(false);
@@ -106,41 +124,57 @@ const App = () => {
 
   // --- LIVE ESP32 TELEMETRY FETCH LOOP ---
   useEffect(() => {
+    localStorage.setItem('pekinensis_espIp', espIpAddress);
+  }, [espIpAddress]);
+
+  useEffect(() => {
     if (!isLoggedIn) return;
+    let cancelled = false;
 
     const fetchEspTelemetry = async () => {
       try {
-        const response = await fetch(`http://${espIpAddress}/telemetry`);
-        if (response.ok) {
-          const data = await response.json();
-          setSensors({
-            temp: data.temp,
-            humidity: data.humidity,
-            moisture1: data.moisture1,
-            moisture2: data.moisture2,
-            waterLevel: data.waterLevel
-          });
-          setActuators(prev => ({
-            fan: { ...prev.fan, state: data.fan },
-            light: { ...prev.light, state: data.light },
-            valve1: { ...prev.valve1, state: data.valve1 },
-            valve2: { ...prev.valve2, state: data.valve2 }
-          }));
-        }
-      } catch (err) {
-        // Fallback simulation if ESP32 is offline during development/testing
-        const newTemp = parseFloat((24 + Math.random() * 5).toFixed(1));
-        const newM1 = parseFloat((35 + Math.random() * 20).toFixed(1));
-        const newM2 = parseFloat((35 + Math.random() * 20).toFixed(1));
-        const newWater = parseFloat((70 + Math.random() * 10).toFixed(1));
-        setSensors(prev => ({ ...prev, temp: newTemp, moisture1: newM1, moisture2: newM2, waterLevel: newWater }));
+        const response = await espFetch(espIpAddress, '/telemetry');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (cancelled) return;
+        setSensors({
+          temp: data.temp,
+          humidity: data.humidity,
+          moisture1: data.moisture1,
+          moisture2: data.moisture2,
+          waterLevel: data.waterLevel
+        });
+        setActuators({
+          fan: { state: !!data.fan, mode: data.fanMode || 'auto' },
+          light: { state: !!data.light, mode: data.lightMode || 'auto' },
+          valve1: { state: !!data.valve1, mode: data.valve1Mode || 'auto' },
+          valve2: { state: !!data.valve2, mode: data.valve2Mode || 'auto' }
+        });
+        setEspOnline(true);
+      } catch {
+        // ESP32 unreachable: keep the last known values and show "Offline"
+        // (no fake data, so what you see is always real).
+        if (!cancelled) setEspOnline(false);
       }
     };
 
     fetchEspTelemetry();
     const interval = setInterval(fetchEspTelemetry, 3000);
-    return () => clearInterval(interval);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [isLoggedIn, espIpAddress]);
+
+  // Push the automation thresholds to the ESP32 whenever they change, and
+  // again every time the ESP32 (re)connects (it forgets them on reboot).
+  useEffect(() => {
+    if (!isLoggedIn || !espOnline) return;
+    const { hotTemp, coldTemp, dryMoisture } = thresholds;
+    if (![hotTemp, coldTemp, dryMoisture].every(Number.isFinite)) return;
+    const timer = setTimeout(() => {
+      const qs = new URLSearchParams({ hot: hotTemp, cold: coldTemp, dry: dryMoisture });
+      espFetch(espIpAddress, `/thresholds?${qs}`, { method: 'POST' }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [thresholds, espIpAddress, isLoggedIn, espOnline]);
 
   const handleInstallClick = async () => {
     if (installPrompt) {
@@ -155,13 +189,28 @@ const App = () => {
     }
   };
 
-  const handleToggleActuator = (key) => {
-    setActuators(prev => {
-      const current = prev[key];
-      const newMode = current.mode === 'auto' ? 'manual' : 'auto';
-      const newState = !current.state;
-      return { ...prev, [key]: { state: newState, mode: newMode } };
-    });
+  // Click cycles: AUTO -> MANUAL ON -> MANUAL OFF -> AUTO. The command is sent to
+  // the ESP32; the card only changes if the ESP32 accepted it.
+  const handleToggleActuator = async (key) => {
+    const current = actuators[key];
+    let next;
+    if (current.mode === 'auto') next = { mode: 'manual', state: true };
+    else if (current.state) next = { mode: 'manual', state: false };
+    else next = { mode: 'auto', state: false };
+
+    const previous = actuators;
+    setControlError('');
+    setActuators(prev => ({ ...prev, [key]: next })); // optimistic update
+    try {
+      const qs = new URLSearchParams({ device: key, mode: next.mode, state: next.state ? '1' : '0' });
+      const res = await espFetch(espIpAddress, `/control?${qs}`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setActuators(prev => ({ ...prev, [key]: { mode: data.mode, state: data.state } }));
+    } catch {
+      setActuators(previous); // revert: the command did not reach the ESP32
+      setControlError(`Could not reach the ESP32 at ${espIpAddress} - command not sent.`);
+    }
   };
 
   const handleScanRealWifi = async () => {
@@ -391,8 +440,8 @@ const App = () => {
               <CheckCircle className="w-4 h-4" /> App Installed
             </div>
           )}
-          <button onClick={() => setWifiModalOpen(true)} className="px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border border-[#1F2937] text-[#34D399]">
-            <Wifi className="w-4 h-4" /> {activeSsid}
+          <button onClick={() => { setIpDraft(espIpAddress); setWifiModalOpen(true); }} className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition bg-[#0B0F19] border ${espOnline ? 'border-[#34D399]/40 text-[#34D399]' : 'border-red-500/40 text-red-400'}`}>
+            <Wifi className="w-4 h-4" /> {espOnline ? `ESP32 Online · ${espIpAddress}` : 'ESP32 Offline'}
           </button>
           <button onClick={handleDownloadDocx} className="bg-[#0B0F19] hover:bg-[#161e31] border border-[#1F2937] px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold text-[#22D3EE]">
             <FileText className="w-4 h-4" /> Export Tabular .DOCX
@@ -436,10 +485,13 @@ const App = () => {
 
             <div className="mb-4">
               <label className="text-[10px] text-gray-400 uppercase block mb-1">ESP32 Device IP Address</label>
-              <input type="text" value={espIpAddress} onChange={e => setEspIpAddress(e.target.value)} className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white" />
+              <input type="text" value={ipDraft} onChange={e => setIpDraft(e.target.value)} placeholder="192.168.1.6" className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-xl px-3 py-2 text-xs text-white" />
+              <p className={`text-[11px] mt-2 ${espOnline ? 'text-[#34D399]' : 'text-red-400'}`}>
+                {espOnline ? `Connected to ${espIpAddress}` : `Not reachable at ${espIpAddress}. Check power, IP, and that this device is on the same Wi-Fi.`}
+              </p>
             </div>
 
-            <button onClick={() => setWifiModalOpen(false)} className="w-full bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
+            <button onClick={() => { setEspIpAddress(ipDraft.trim() || DEFAULT_ESP_IP); setWifiModalOpen(false); }} className="w-full bg-[#10B981] text-[#0B0F19] font-bold py-2.5 rounded-xl text-xs transition">
               Save & Connect
             </button>
           </div>
@@ -521,9 +573,10 @@ const App = () => {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-200">Actuators & Manual Override</h2>
-              <span className="text-xs text-gray-400 bg-[#0B0F19] px-3 py-1 rounded-xl border border-[#1F2937]">Click card to override</span>
+              <span className="text-xs text-gray-400 bg-[#0B0F19] px-3 py-1 rounded-xl border border-[#1F2937]">Click: Auto → On → Off → Auto</span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {controlError && <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-2.5 rounded-xl text-xs mb-3">{controlError}</div>}
+            <div className="grid grid-cols-2 gap-3">
               <button onClick={() => handleToggleActuator('fan')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.fan.state ? 'bg-[#10B981]/10 border border-[#34D399]/40 text-[#34D399]' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
                 <Fan className={`w-6 h-6 mb-2 ${actuators.fan.state ? 'animate-spin text-[#34D399]' : ''}`} />
                 <span className="text-[11px] font-bold">Exhaust Fan</span>
@@ -533,16 +586,6 @@ const App = () => {
                 <Lightbulb className={`w-6 h-6 mb-2 ${actuators.light.state ? 'text-[#22D3EE]' : ''}`} />
                 <span className="text-[11px] font-bold">Grow Lights</span>
                 <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.light.mode}: {actuators.light.state ? 'ON' : 'OFF'}</span>
-              </button>
-              <button onClick={() => handleToggleActuator('valve1')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.valve1.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
-                <Power className={`w-6 h-6 mb-2 ${actuators.valve1.state ? 'text-cyan-400' : ''}`} />
-                <span className="text-[11px] font-bold text-center">Solenoid Valve 1</span>
-                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.valve1.mode}: {actuators.valve1.state ? 'ON' : 'OFF'}</span>
-              </button>
-              <button onClick={() => handleToggleActuator('valve2')} className={`p-3 rounded-2xl flex flex-col items-center transition ${actuators.valve2.state ? 'bg-cyan-500/10 border border-cyan-400/40 text-cyan-400' : 'bg-[#0B0F19] border border-[#1F2937] text-gray-400'}`}>
-                <Power className={`w-6 h-6 mb-2 ${actuators.valve2.state ? 'text-cyan-400' : ''}`} />
-                <span className="text-[11px] font-bold text-center">Solenoid Valve 2</span>
-                <span className="text-[9px] mt-1 px-1.5 py-0.5 rounded bg-[#111827] uppercase">{actuators.valve2.mode}: {actuators.valve2.state ? 'ON' : 'OFF'}</span>
               </button>
             </div>
           </div>
